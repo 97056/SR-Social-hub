@@ -1,0 +1,19 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: sociallink
+      POSTGRES_USER: sociallink
+      POSTGRES_PASSWORD: change-me
+    ports:
+      - "5432:5432"
+    volumes:
+      - sociallink_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sociallink -d sociallink"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  sociallink_pg:

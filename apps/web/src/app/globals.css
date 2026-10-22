@@ -1,0 +1,41 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: #f4f0e8;
+  --surface: #fffdf9;
+  --text: #1c1917;
+  --primary: #0f3d3e;
+  --secondary: #115e59;
+  --accent: #9a3412;
+  --primary-foreground: #ffffff;
+  --secondary-foreground: #ffffff;
+  --accent-foreground: #ffffff;
+  --radius: 0.75rem;
+  --font-sans: var(--font-source-sans), "Source Sans 3", sans-serif;
+  --font-size-base: 16px;
+}
+
+body {
+  background: var(--background);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: var(--font-size-base);
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.button-outline {
+  background: transparent;
+  color: var(--primary);
+  border: 1px solid var(--primary);
+}
+
+.button-soft {
+  background: color-mix(in srgb, var(--primary) 12%, var(--surface));
+  color: var(--primary);
+}

@@ -1,0 +1,9 @@
+app:
+  cookie:
+    secure: false
+  publishing:
+    sandbox: true
+  dev:
+    expose-email-outbox: true
+  session-secret: dev-session-pepper-not-for-prod!
+  token-encryption-key: dev-only-key-do-not-use-in-prod!

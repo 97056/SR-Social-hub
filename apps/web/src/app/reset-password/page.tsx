@@ -1,0 +1,42 @@
+"use client";
+
+import { FormEvent, Suspense, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { ApiError, api } from "@/lib/api";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+
+function ResetForm() {
+  const params = useSearchParams();
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+  async function onSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    try {
+      await api("/api/auth/password/reset", { method: "POST", body: JSON.stringify({ token: form.get("token"), password: form.get("password") }) });
+      setMessage("Password updated. Sign in with the new password.");
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not reset the password.");
+    }
+  }
+  return (
+    <form onSubmit={onSubmit} className="space-y-4">
+      <div><Label htmlFor="token">Reset token</Label><Input id="token" name="token" required defaultValue={params.get("token") ?? ""} /></div>
+      <div><Label htmlFor="password">New password</Label><Input id="password" name="password" type="password" required minLength={10} /></div>
+      {message && <p className="text-sm">{message}</p>}
+      {error && <p role="alert" className="text-sm text-accent">{error}</p>}
+      <Button type="submit">Update password</Button>
+    </form>
+  );
+}
+
+export default function ResetPage() {
+  return (
+    <div className="mx-auto max-w-md px-4 py-12">
+      <h1 className="text-3xl font-semibold tracking-tight">Choose a new password</h1>
+      <div className="mt-6"><Suspense fallback={<p>Loading…</p>}><ResetForm /></Suspense></div>
+    </div>
+  );
+}

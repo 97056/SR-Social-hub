@@ -1,0 +1,13 @@
+app:
+  cookie:
+    secure: true
+  publishing:
+    sandbox: false
+  dev:
+    expose-email-outbox: false
+
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false
