@@ -4,6 +4,8 @@ All Your Socials. One Dashboard. Multi-tenant social media management for market
 
 This repository is the foundation and the first vertical slices: account security, workspaces, database-driven plans, server-side limits, quote intake, theme tokens, and a publishing worker that will not pretend a provider call succeeded.
 
+The full guide, including the API-key checklist for the next step, is `docs/SR-SOCIAL-HUB.md`.
+
 ## Stack
 
 - Web: Next.js, React, TypeScript, Tailwind CSS, and shadcn-style components in `apps/web/src/components/ui`
@@ -18,7 +20,7 @@ This repository is the foundation and the first vertical slices: account securit
 ```text
 apps/api     Spring Boot API, Flyway migrations, worker, tests
 apps/web     Next.js product and admin UI
-docs         Architecture, deployment, provider onboarding, release checklist
+docs/SR-SOCIAL-HUB.md   Product guide, API-key checklist, deploy notes, launch checklist
 ```
 
 ## Run locally
@@ -96,4 +98,4 @@ Facebook, Instagram, LinkedIn, YouTube, X, Pinterest, and Threads are listed as 
 7. Publishing worker — implemented, including reconcile-before-retry
 8. LinkedIn, YouTube, X, then Pinterest and Threads
 9. Remaining admin screens: email provider delivery, legal publishing, security policy editor
-10. Launch hardening in `docs/release-checklist.md`
+10. Launch hardening in `docs/SR-SOCIAL-HUB.md`
