@@ -1,4 +1,4 @@
-import type { LoginResponse } from "@sr/shared";
+import type { LoginResponse } from "@/lib/types";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 

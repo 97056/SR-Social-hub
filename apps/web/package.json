@@ -9,8 +9,10 @@
     "lint": "tsc --noEmit",
     "test": "echo \"No web unit tests yet\""
   },
+  "engines": {
+    "node": ">=20"
+  },
   "dependencies": {
-    "@sr/shared": "workspace:*",
     "clsx": "^2.1.1",
     "framer-motion": "^12.23.12",
     "lucide-react": "^0.544.0",

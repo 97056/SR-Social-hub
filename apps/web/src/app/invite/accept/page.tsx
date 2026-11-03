@@ -3,7 +3,7 @@
 import { FormEvent, Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { apiFetch, setToken } from "@/lib/api";
-import type { LoginResponse } from "@sr/shared";
+import type { LoginResponse } from "@/lib/types";
 
 function AcceptForm() {
   const router = useRouter();
