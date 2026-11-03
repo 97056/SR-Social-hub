@@ -12,5 +12,17 @@
     "db:migrate": "pnpm --filter @sr/api prisma:migrate",
     "db:generate": "pnpm --filter @sr/api prisma:generate",
     "db:seed": "pnpm --filter @sr/api prisma:seed"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "@parcel/watcher",
+      "prisma",
+      "@prisma/engines",
+      "@prisma/client",
+      "sharp",
+      "unrs-resolver",
+      "embedded-postgres"
+    ]
   }
 }

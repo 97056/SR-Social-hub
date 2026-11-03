@@ -34,17 +34,20 @@ The Hostinger site is still on an older deployment that uses `/legal/...` paths.
 
 Do **not** use `https://srsocialhub.in/privacy` until a new Hostinger deploy succeeds — that path 404s on the current live build.
 
-### Hostinger deploy settings (apps/web)
+### Hostinger deploy settings (apps/web) — required
+
+Open **Websites → srsocialhub.in → Deployments → Redeploy / Build settings** and set:
 
 | Setting | Value |
 | --- | --- |
 | Framework | Next.js |
 | Branch | `main` |
-| Root directory | `apps/web` |
+| Root directory | `apps/web` (must not be empty / repo root) |
 | Node | 22.x |
-| Package manager | **npm** (not pnpm) |
+| Package manager | **npm** ← change this if it still says pnpm |
 
-`apps/web` ships with `package-lock.json` and `packageManager: npm@10.9.2` so Corepack does not pin the monorepo’s old pnpm version.
+If Package manager stays **pnpm**, install fails (`ERR_PNPM_IGNORED_BUILDS` / Prisma).  
+`apps/web` is meant for **npm** (`package-lock.json` + `packageManager: npm@10.9.2`).
 
 ### Local / after next successful deploy
 
