@@ -2,7 +2,6 @@
   "name": "sr-social-hub",
   "private": true,
   "version": "0.1.0",
-  "packageManager": "pnpm@9.15.0",
   "scripts": {
     "dev": "pnpm -r --parallel --filter @sr/api --filter @sr/web dev",
     "dev:api": "pnpm --filter @sr/api dev",
