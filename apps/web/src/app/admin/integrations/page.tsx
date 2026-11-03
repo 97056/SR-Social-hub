@@ -1,85 +1,152 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
-import { ApiError, api } from "@/lib/api";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { AppShell } from "@/components/shell";
+import { apiFetch, getToken } from "@/lib/api";
+import { adminNav } from "@/lib/nav";
 
 type Integration = {
-  provider: string;
-  displayName: string;
+  id: string;
+  code: string;
+  name: string;
   enabled: boolean;
-  clientId?: string | null;
-  secretSet: boolean;
-  redirectUri?: string | null;
-  scopes?: string | null;
-  apiVersion?: string | null;
-  environment: string;
-  verificationStatus: string;
-  docsUrl?: string;
-  lastHealthMessage?: string | null;
+  config: {
+    oauthClientId: string | null;
+    clientSecretMasked: string | null;
+    hasClientSecret: boolean;
+    redirectUri: string | null;
+    scopes: string[];
+    apiVersion: string | null;
+  } | null;
 };
 
-export default function IntegrationsPage() {
-  const [rows, setRows] = useState<Integration[]>([]);
-  const [message, setMessage] = useState("");
+export default function AdminIntegrationsPage() {
+  const router = useRouter();
+  const [items, setItems] = useState<Integration[]>([]);
+  const [drafts, setDrafts] = useState<Record<string, { oauthClientId: string; clientSecret: string; redirectUri: string }>>({});
+  const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState<string | null>(null);
 
-  function load() {
-    api<Integration[]>("/api/admin/integrations").then(setRows).catch((err) => setMessage(err instanceof ApiError ? err.message : "Could not load integrations."));
-  }
-  useEffect(load, []);
-
-  async function save(event: FormEvent<HTMLFormElement>, provider: string) {
-    event.preventDefault();
-    const form = new FormData(event.currentTarget);
-    const secret = String(form.get("secret") || "");
-    try {
-      await api(`/api/admin/integrations/${provider}`, {
-        method: "PUT",
-        body: JSON.stringify({
-          enabled: form.get("enabled") === "on",
-          clientId: form.get("clientId"),
-          secret: secret || null,
-          redirectUri: form.get("redirectUri"),
-          scopes: form.get("scopes"),
-          apiVersion: form.get("apiVersion"),
-          environment: form.get("environment"),
-        }),
-      });
-      setMessage(`${provider} saved. The secret is not returned to the browser.`);
-      load();
-    } catch (err) {
-      setMessage(err instanceof ApiError ? err.message : "Could not save.");
+  async function load() {
+    const list = await apiFetch<Integration[]>("/admin/integrations");
+    setItems(list);
+    const next: typeof drafts = {};
+    for (const item of list) {
+      next[item.code] = {
+        oauthClientId: item.config?.oauthClientId ?? "",
+        clientSecret: "",
+        redirectUri: item.config?.redirectUri ?? "http://localhost:4000/api/v1/oauth/callback",
+      };
     }
+    setDrafts(next);
+  }
+
+  useEffect(() => {
+    if (!getToken()) {
+      router.replace("/admin/login");
+      return;
+    }
+    load().catch((e: Error) => setError(e.message));
+  }, [router]);
+
+  async function toggle(code: string, enabled: boolean) {
+    await apiFetch(`/admin/integrations/${code}`, {
+      method: "PATCH",
+      body: JSON.stringify({ enabled }),
+    });
+    await load();
+  }
+
+  async function save(code: string) {
+    setSaved(null);
+    const draft = drafts[code];
+    await apiFetch(`/admin/integrations/${code}`, {
+      method: "PATCH",
+      body: JSON.stringify({
+        oauthClientId: draft.oauthClientId || undefined,
+        clientSecret: draft.clientSecret || undefined,
+        redirectUri: draft.redirectUri || undefined,
+      }),
+    });
+    setSaved(code);
+    await load();
   }
 
   return (
-    <div className="mx-auto max-w-4xl px-4 py-10">
-      <h1 className="text-3xl font-semibold tracking-tight">Provider settings</h1>
-      <p className="mt-2 text-sm">Saving credentials does not mark a connector verified and does not call the provider.</p>
-      {message && <p className="mt-4 text-sm">{message}</p>}
-      <div className="mt-6 space-y-6">
-        {rows.map((row) => (
-          <form key={row.provider} onSubmit={(event) => save(event, row.provider)} className="space-y-3 rounded-brand bg-surface p-4">
+    <AppShell title="Social integrations" subtitle="Super Admin" nav={adminNav()}>
+      {error ? <p className="mb-4 text-sm text-brand-error">{error}</p> : null}
+      <p className="mb-4 text-sm text-content-muted">
+        Secrets are encrypted at rest and masked after save. Enable a network for mock or live OAuth; live
+        auto-publish remains Facebook-first until each provider is certified.
+      </p>
+      <div className="grid gap-4 lg:grid-cols-2">
+        {items.map((item) => (
+          <div key={item.id} className="panel space-y-3 p-5">
             <div className="flex items-center justify-between gap-3">
-              <h2 className="text-xl font-semibold">{row.displayName}</h2>
-              <span className="text-sm">{row.verificationStatus}{row.secretSet ? " · secret stored" : ""}</span>
+              <div>
+                <h2 className="font-display text-lg font-semibold">{item.name}</h2>
+                <p className="text-xs text-content-muted">{item.code}</p>
+              </div>
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={item.enabled}
+                  onChange={(e) => toggle(item.code, e.target.checked)}
+                />
+                Enabled
+              </label>
             </div>
-            <label className="flex items-center gap-2 text-sm"><input name="enabled" type="checkbox" defaultChecked={row.enabled} /> Enabled</label>
-            <Input name="clientId" aria-label={`${row.displayName} client id`} placeholder="Client id" defaultValue={row.clientId ?? ""} />
-            <Input name="secret" aria-label={`${row.displayName} secret`} placeholder={row.secretSet ? "Secret is stored. Enter a new value to rotate it." : "Secret"} type="password" autoComplete="off" />
-            <Input name="redirectUri" aria-label="Redirect URI" placeholder="Redirect URI" defaultValue={row.redirectUri ?? ""} />
-            <Input name="scopes" aria-label="Scopes" placeholder="Scopes" defaultValue={row.scopes ?? ""} />
-            <Input name="apiVersion" aria-label="API version" placeholder="API version" defaultValue={row.apiVersion ?? ""} />
-            <select name="environment" defaultValue={row.environment} aria-label="Environment" className="w-full rounded-brand border border-black/10 bg-surface px-3 py-2">
-              <option value="test">test</option>
-              <option value="live">live</option>
-            </select>
-            {row.docsUrl && <a className="text-sm underline" href={row.docsUrl}>Official documentation</a>}
-            <div><Button type="submit">Save</Button></div>
-          </form>
+            <input
+              className="w-full rounded-xl border border-white/10 bg-ink-elevated px-3 py-2 text-sm"
+              placeholder="OAuth client ID"
+              value={drafts[item.code]?.oauthClientId ?? ""}
+              onChange={(e) =>
+                setDrafts((d) => ({
+                  ...d,
+                  [item.code]: { ...d[item.code], oauthClientId: e.target.value },
+                }))
+              }
+            />
+            <input
+              className="w-full rounded-xl border border-white/10 bg-ink-elevated px-3 py-2 text-sm"
+              placeholder={
+                item.config?.hasClientSecret
+                  ? `Secret saved (${item.config.clientSecretMasked}) — enter to replace`
+                  : "Client secret"
+              }
+              type="password"
+              value={drafts[item.code]?.clientSecret ?? ""}
+              onChange={(e) =>
+                setDrafts((d) => ({
+                  ...d,
+                  [item.code]: { ...d[item.code], clientSecret: e.target.value },
+                }))
+              }
+            />
+            <input
+              className="w-full rounded-xl border border-white/10 bg-ink-elevated px-3 py-2 text-sm"
+              placeholder="Redirect URI"
+              value={drafts[item.code]?.redirectUri ?? ""}
+              onChange={(e) =>
+                setDrafts((d) => ({
+                  ...d,
+                  [item.code]: { ...d[item.code], redirectUri: e.target.value },
+                }))
+              }
+            />
+            <button
+              className="rounded-xl bg-brand-primary px-4 py-2 text-sm font-semibold text-white"
+              onClick={() => save(item.code)}
+            >
+              Save config
+            </button>
+            {saved === item.code ? (
+              <p className="text-xs text-brand-success">Saved — secret masked.</p>
+            ) : null}
+          </div>
         ))}
       </div>
-    </div>
+    </AppShell>
   );
 }

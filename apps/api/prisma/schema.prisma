@@ -1,0 +1,780 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum GlobalRole {
+  SUPER_ADMIN
+  USER
+}
+
+enum CompanyRole {
+  OWNER
+  ADMIN
+  MANAGER
+  MEMBER
+  APPROVER
+}
+
+enum ClientRole {
+  OWNER
+  APPROVER
+  VIEWER
+}
+
+enum MembershipStatus {
+  ACTIVE
+  INVITED
+  SUSPENDED
+}
+
+enum CompanyStatus {
+  TRIAL
+  ACTIVE
+  SUSPENDED
+  CANCELLED
+}
+
+enum SocialPlatformCode {
+  FACEBOOK
+  INSTAGRAM
+  LINKEDIN
+  X
+  YOUTUBE
+  TIKTOK
+  PINTEREST
+  THREADS
+  GOOGLE_BUSINESS
+}
+
+enum ApprovalWorkflow {
+  CLIENT_THEN_PUBLISH
+  COMPANY_THEN_PUBLISH
+  CLIENT_THEN_COMPANY
+  CLIENT_THEN_AUTO_SCHEDULE
+}
+
+model User {
+  id           String     @id @default(cuid())
+  email        String     @unique
+  passwordHash String
+  fullName     String
+  globalRole   GlobalRole @default(USER)
+  isActive     Boolean    @default(true)
+  lastLoginAt  DateTime?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  companyMemberships CompanyMember[]
+  clientMemberships  ClientMember[]
+  auditLogs          AuditLog[]      @relation("AuditActor")
+  refreshTokens      RefreshToken[]
+  uploadedMedia      MediaAsset[]    @relation("MediaUploader")
+  authoredPosts      ContentPost[]   @relation("PostAuthor")
+  postApprovals      PostApproval[]  @relation("ApprovalActor")
+  notifications      Notification[]  @relation("NotificationRecipient")
+  aiUsageRecords     AiUsageRecord[] @relation("AiUsageActor")
+
+  @@index([globalRole])
+}
+
+model RefreshToken {
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Company {
+  id             String        @id @default(cuid())
+  name           String
+  slug           String        @unique
+  status         CompanyStatus @default(TRIAL)
+  logoUrl        String?
+  website        String?
+  timezone       String        @default("UTC")
+  trialEndsAt    DateTime?
+  planId         String?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  plan           SubscriptionPlan? @relation(fields: [planId], references: [id])
+  members        CompanyMember[]
+  clients        Client[]
+  auditLogs      AuditLog[]
+  socialAccounts SocialAccount[]
+  mediaAssets    MediaAsset[]
+  campaigns      Campaign[]
+  posts          ContentPost[]
+  publishingJobs PublishingJob[]
+  subscriptions  Subscription[]
+  invoices       Invoice[]
+  payments       Payment[]
+  notifications  Notification[]
+  aiUsageRecords AiUsageRecord[]
+
+  @@index([status])
+}
+
+model CompanyMember {
+  id         String           @id @default(cuid())
+  companyId  String
+  userId     String
+  role       CompanyRole      @default(MEMBER)
+  status     MembershipStatus @default(ACTIVE)
+  invitedAt  DateTime?
+  acceptedAt DateTime?
+  createdAt  DateTime         @default(now())
+  updatedAt  DateTime         @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, userId])
+  @@index([userId])
+}
+
+model Client {
+  id               String           @id @default(cuid())
+  companyId        String
+  name             String
+  externalCode     String?
+  logoUrl          String?
+  brandPrimary     String?
+  brandSecondary   String?
+  website          String?
+  industry         String?
+  contactEmail     String?
+  contactPhone     String?
+  timezone         String           @default("UTC")
+  brandVoice       String?
+  approvalWorkflow ApprovalWorkflow @default(CLIENT_THEN_PUBLISH)
+  isArchived       Boolean          @default(false)
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  company        Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  members        ClientMember[]
+  socialAccounts SocialAccount[]
+  mediaAssets    MediaAsset[]
+  campaigns      Campaign[]
+  posts          ContentPost[]
+
+  @@unique([companyId, externalCode])
+  @@index([companyId, isArchived])
+}
+
+model ClientMember {
+  id         String           @id @default(cuid())
+  clientId   String
+  userId     String
+  role       ClientRole       @default(VIEWER)
+  status     MembershipStatus @default(ACTIVE)
+  invitedAt  DateTime?
+  acceptedAt DateTime?
+  createdAt  DateTime         @default(now())
+  updatedAt  DateTime         @updatedAt
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([clientId, userId])
+  @@index([userId])
+}
+
+model SocialPlatform {
+  id          String             @id @default(cuid())
+  code        SocialPlatformCode @unique
+  name        String
+  enabled     Boolean            @default(false)
+  description String?
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+
+  appConfig SocialAppConfig?
+  accounts  SocialAccount[]
+}
+
+enum SocialAccountStatus {
+  CONNECTED
+  DISCONNECTED
+  EXPIRED
+  REQUIRES_REAUTH
+  ERROR
+}
+
+model SocialAccount {
+  id                 String              @id @default(cuid())
+  companyId          String
+  clientId           String
+  platformId         String
+  platformCode       SocialPlatformCode
+  externalAccountId  String
+  accountName        String?
+  username           String?
+  pageIdentifier     String?
+  status             SocialAccountStatus @default(CONNECTED)
+  capabilities       Json                @default("{}")
+  lastSyncedAt       DateTime?
+  tokenExpiresAt     DateTime?
+  connectionMode     String              @default("mock")
+  lastError          String?
+  connectedByUserId  String?
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+
+  company        Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  client         Client             @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  platform       SocialPlatform     @relation(fields: [platformId], references: [id], onDelete: Cascade)
+  token          SocialAccountToken?
+  publishingJobs PublishingJob[]
+
+  @@unique([clientId, platformCode, externalAccountId])
+  @@index([companyId, clientId])
+  @@index([platformCode, status])
+}
+
+model SocialAccountToken {
+  id                    String   @id @default(cuid())
+  socialAccountId       String   @unique
+  accessTokenEncrypted  String
+  refreshTokenEncrypted String?
+  tokenType             String?
+  scopes                String[] @default([])
+  expiresAt             DateTime?
+  rawMetaEncrypted      String?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  socialAccount SocialAccount @relation(fields: [socialAccountId], references: [id], onDelete: Cascade)
+}
+
+model OAuthState {
+  id          String             @id @default(cuid())
+  state       String             @unique
+  platformCode SocialPlatformCode
+  companyId   String
+  clientId    String
+  userId      String
+  redirectTo  String?
+  expiresAt   DateTime
+  consumedAt  DateTime?
+  createdAt   DateTime           @default(now())
+
+  @@index([expiresAt])
+}
+
+model SocialAppConfig {
+  id                   String   @id @default(cuid())
+  platformId           String   @unique
+  oauthClientId        String?
+  clientSecretEncrypted String?
+  redirectUri          String?
+  scopes               String[] @default([])
+  apiVersion           String?
+  capabilities         Json     @default("{}")
+  lastError            String?
+  tokenExpiryMonitor   Boolean  @default(true)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  platform SocialPlatform @relation(fields: [platformId], references: [id], onDelete: Cascade)
+}
+
+model Invitation {
+  id          String           @id @default(cuid())
+  email       String
+  tokenHash   String           @unique
+  companyId   String?
+  clientId    String?
+  companyRole CompanyRole?
+  clientRole  ClientRole?
+  status      MembershipStatus @default(INVITED)
+  expiresAt   DateTime
+  acceptedAt  DateTime?
+  invitedById String?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  @@index([email])
+  @@index([companyId])
+  @@index([clientId])
+}
+
+model SubscriptionPlan {
+  id              String   @id @default(cuid())
+  code            String   @unique
+  name            String
+  monthlyPriceInr Int
+  yearlyPriceInr  Int?
+  clientQuota     Int
+  aiQuota         Int      @default(100)
+  storageMb       Int      @default(1024)
+  accountQuota    Int      @default(20)
+  teamQuota       Int      @default(5)
+  isCustom        Boolean  @default(false)
+  isActive        Boolean  @default(true)
+  entitlements    Json     @default("{}")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  companies     Company[]
+  subscriptions Subscription[]
+}
+
+enum BillingInterval {
+  MONTHLY
+  YEARLY
+}
+
+enum SubscriptionStatus {
+  TRIALING
+  ACTIVE
+  PAST_DUE
+  CANCELLED
+  EXPIRED
+  GRACE
+}
+
+enum InvoiceStatus {
+  DRAFT
+  OPEN
+  PAID
+  VOID
+  UNCOLLECTIBLE
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCEEDED
+  FAILED
+  REFUNDED
+}
+
+model Subscription {
+  id                 String             @id @default(cuid())
+  companyId          String
+  planId             String
+  status             SubscriptionStatus @default(TRIALING)
+  interval           BillingInterval    @default(MONTHLY)
+  currentPeriodStart DateTime
+  currentPeriodEnd   DateTime
+  trialEndsAt        DateTime?
+  cancelAtPeriodEnd  Boolean            @default(false)
+  cancelledAt        DateTime?
+  graceEndsAt        DateTime?
+  addonClientSeats   Int                @default(0)
+  provider           String             @default("mock")
+  providerSubId      String?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  company  Company              @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  plan     SubscriptionPlan     @relation(fields: [planId], references: [id])
+  addons   SubscriptionAddon[]
+  invoices Invoice[]
+
+  @@index([companyId, status])
+  @@index([currentPeriodEnd])
+}
+
+model SubscriptionAddon {
+  id             String   @id @default(cuid())
+  subscriptionId String
+  code           String
+  name           String
+  quantity       Int      @default(1)
+  unitPriceInr   Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  subscription Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+
+  @@index([subscriptionId])
+  @@unique([subscriptionId, code])
+}
+
+model Invoice {
+  id             String        @id @default(cuid())
+  companyId      String
+  subscriptionId String?
+  number         String        @unique
+  status         InvoiceStatus @default(OPEN)
+  currency       String        @default("INR")
+  subtotalInr    Int
+  taxInr         Int           @default(0)
+  totalInr       Int
+  periodStart    DateTime?
+  periodEnd      DateTime?
+  dueAt          DateTime?
+  paidAt         DateTime?
+  lineItems      Json          @default("[]")
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  company      Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  subscription Subscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+  payments     Payment[]
+
+  @@index([companyId, createdAt])
+  @@index([status])
+}
+
+model Payment {
+  id                String        @id @default(cuid())
+  companyId         String
+  invoiceId         String?
+  provider          String        @default("mock")
+  providerPaymentId String?
+  amountInr         Int
+  status            PaymentStatus @default(PENDING)
+  failureReason     String?
+  rawPayload        Json?
+  idempotencyKey    String        @unique
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  company Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  invoice Invoice? @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+
+  @@index([companyId, createdAt])
+  @@index([invoiceId])
+}
+
+model BillingEvent {
+  id             String    @id @default(cuid())
+  provider       String
+  eventType      String
+  idempotencyKey String    @unique
+  payload        Json
+  processedAt    DateTime?
+  createdAt      DateTime  @default(now())
+
+  @@index([provider, eventType])
+}
+
+model Notification {
+  id          String    @id @default(cuid())
+  userId      String
+  companyId   String?
+  clientId    String?
+  type        String
+  title       String
+  body        String
+  href        String?
+  metadata    Json?
+  dedupeKey   String    @unique
+  readAt      DateTime?
+  emailStatus String    @default("SKIPPED")
+  createdAt   DateTime  @default(now())
+
+  user    User     @relation("NotificationRecipient", fields: [userId], references: [id], onDelete: Cascade)
+  company Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([companyId, createdAt])
+  @@index([readAt])
+}
+
+model AiUsageRecord {
+  id           String   @id @default(cuid())
+  companyId    String
+  userId       String?
+  feature      String
+  provider     String
+  units        Int      @default(1)
+  promptTokens Int?
+  outputTokens Int?
+  metadata     Json?
+  createdAt    DateTime @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  user    User?   @relation("AiUsageActor", fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([companyId, createdAt])
+  @@index([feature, createdAt])
+}
+
+model SystemSetting {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     Json
+  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
+}
+
+model FeatureFlag {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  enabled     Boolean  @default(false)
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  actorId    String?
+  companyId  String?
+  action     String
+  entityType String?
+  entityId   String?
+  metadata   Json?
+  ipAddress  String?
+  createdAt  DateTime @default(now())
+
+  actor   User?    @relation("AuditActor", fields: [actorId], references: [id], onDelete: SetNull)
+  company Company? @relation(fields: [companyId], references: [id], onDelete: SetNull)
+
+  @@index([companyId, createdAt])
+  @@index([actorId, createdAt])
+}
+
+enum MediaKind {
+  IMAGE
+  VIDEO
+  OTHER
+}
+
+enum PostStatus {
+  DRAFT
+  PENDING_APPROVAL
+  APPROVED
+  REJECTED
+  SCHEDULED
+  PUBLISHING
+  PUBLISHED
+  FAILED
+  CANCELLED
+}
+
+enum ApprovalStep {
+  CLIENT
+  COMPANY
+}
+
+enum ApprovalDecision {
+  PENDING
+  APPROVED
+  REJECTED
+  CHANGES_REQUESTED
+  INVALIDATED
+}
+
+enum TargetStatus {
+  PENDING
+  READY
+  SCHEDULED
+  PUBLISHING
+  PUBLISHED
+  FAILED
+  CANCELLED
+  ASSISTED_REQUIRED
+}
+
+model Campaign {
+  id          String   @id @default(cuid())
+  companyId   String
+  clientId    String
+  name        String
+  objective   String?
+  startsAt    DateTime?
+  endsAt      DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  company Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  client  Client       @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  posts   ContentPost[]
+
+  @@index([companyId, clientId])
+}
+
+model MediaAsset {
+  id           String    @id @default(cuid())
+  companyId    String
+  clientId     String
+  uploadedById String?
+  kind         MediaKind
+  filename     String
+  originalName String
+  mimeType     String
+  sizeBytes    Int
+  width        Int?
+  height       Int?
+  durationSec  Float?
+  storageKey   String
+  folder       String    @default("general")
+  tags         String[]  @default([])
+  checksum     String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  company    Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  client     Client        @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  uploadedBy User?         @relation("MediaUploader", fields: [uploadedById], references: [id], onDelete: SetNull)
+  posts      ContentPost[]
+
+  @@index([companyId, clientId, createdAt])
+  @@index([folder])
+}
+
+model ContentPost {
+  id                 String        @id @default(cuid())
+  companyId          String
+  clientId           String
+  campaignId         String?
+  authorId           String?
+  mediaAssetId       String?
+  status             PostStatus    @default(DRAFT)
+  baseCaption        String        @default("")
+  baseHashtags       String        @default("")
+  callToAction       String?
+  linkUrl            String?
+  brandVoice         String?
+  scheduledAt        DateTime?
+  revision           Int           @default(1)
+  currentApprovalStep ApprovalStep?
+  validationJson     Json?
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+
+  company    Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  client     Client         @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  campaign   Campaign?      @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  author     User?          @relation("PostAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+  mediaAsset MediaAsset?    @relation(fields: [mediaAssetId], references: [id], onDelete: SetNull)
+  variants       PostVariant[]
+  targets        PostTarget[]
+  approvals      PostApproval[]
+  publishingJobs PublishingJob[]
+
+  @@index([companyId, clientId, status])
+  @@index([scheduledAt])
+  @@index([status, currentApprovalStep])
+}
+
+model PostApproval {
+  id         String           @id @default(cuid())
+  postId     String
+  revision   Int
+  step       ApprovalStep
+  decision   ApprovalDecision @default(PENDING)
+  approverId String?
+  comments   String?
+  decidedAt  DateTime?
+  createdAt  DateTime         @default(now())
+  updatedAt  DateTime         @updatedAt
+
+  post     ContentPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  approver User?       @relation("ApprovalActor", fields: [approverId], references: [id], onDelete: SetNull)
+
+  @@index([postId, revision])
+  @@index([decision, step])
+  @@index([approverId])
+}
+
+model PostVariant {
+  id          String             @id @default(cuid())
+  postId      String
+  platformCode SocialPlatformCode
+  caption     String             @default("")
+  title       String?
+  description String?
+  hashtags    String             @default("")
+  cta         String?
+  linkUrl     String?
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+
+  post ContentPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, platformCode])
+}
+
+model PostTarget {
+  id              String             @id @default(cuid())
+  postId          String
+  socialAccountId String?
+  platformCode    SocialPlatformCode
+  status          TargetStatus       @default(PENDING)
+  scheduledAt     DateTime?
+  publishedAt     DateTime?
+  externalPostId  String?
+  lastError       String?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  post ContentPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@index([postId, platformCode])
+  @@index([status])
+}
+
+enum PublishingJobStatus {
+  QUEUED
+  SCHEDULED
+  PUBLISHING
+  PUBLISHED
+  FAILED
+  RETRY_PENDING
+  CANCELLED
+  REQUIRES_REAUTH
+  ASSISTED_REQUIRED
+}
+
+model PublishingJob {
+  id                  String              @id @default(cuid())
+  companyId           String
+  clientId            String
+  postId              String
+  postTargetId        String?
+  socialAccountId     String?
+  platformCode        SocialPlatformCode
+  contentRevision     Int
+  approvalVerifiedAt  DateTime?
+  scheduledAt         DateTime?
+  status              PublishingJobStatus @default(QUEUED)
+  attemptCount        Int                 @default(0)
+  maxAttempts         Int                 @default(5)
+  idempotencyKey      String              @unique
+  externalPostId      String?
+  lastError           String?
+  nextAttemptAt       DateTime?
+  lockedAt            DateTime?
+  lockedBy            String?
+  publishedAt         DateTime?
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+
+  company       Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  post          ContentPost    @relation(fields: [postId], references: [id], onDelete: Cascade)
+  socialAccount SocialAccount? @relation(fields: [socialAccountId], references: [id], onDelete: SetNull)
+  events        PublishingEvent[]
+
+  @@index([status, nextAttemptAt, scheduledAt])
+  @@index([companyId, createdAt])
+  @@index([postId])
+}
+
+model PublishingEvent {
+  id        String   @id @default(cuid())
+  jobId     String
+  type      String
+  message   String?
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  job PublishingJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@index([jobId, createdAt])
+}

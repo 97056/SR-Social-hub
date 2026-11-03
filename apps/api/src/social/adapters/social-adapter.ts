@@ -1,0 +1,58 @@
+import { SocialPlatformCode } from "@prisma/client";
+
+export type AdapterAuthMode = "live" | "mock" | "unavailable";
+
+export type AdapterCapabilities = {
+  publishText: boolean;
+  publishImage: boolean;
+  publishVideo: boolean;
+  schedule: boolean;
+  assistedOnly: boolean;
+  notes?: string;
+};
+
+export type AuthorizeParams = {
+  clientId: string;
+  redirectUri: string;
+  scopes: string[];
+  state: string;
+  apiVersion?: string | null;
+};
+
+export type TokenExchangeResult = {
+  accessToken: string;
+  refreshToken?: string | null;
+  tokenType?: string | null;
+  expiresAt?: Date | null;
+  scopes: string[];
+  externalAccountId: string;
+  accountName?: string | null;
+  username?: string | null;
+  pageIdentifier?: string | null;
+  capabilities: AdapterCapabilities;
+  mode: AdapterAuthMode;
+  rawMeta?: Record<string, unknown>;
+};
+
+export interface SocialAdapter {
+  readonly code: SocialPlatformCode;
+  readonly displayName: string;
+  getDefaultScopes(): string[];
+  getCapabilities(): AdapterCapabilities;
+  resolveMode(hasCredentials: boolean): AdapterAuthMode;
+  buildAuthorizeUrl(params: AuthorizeParams, mode: AdapterAuthMode): string;
+  exchangeCode(input: {
+    code: string;
+    redirectUri: string;
+    clientId: string;
+    clientSecret: string;
+    mode: AdapterAuthMode;
+    apiVersion?: string | null;
+  }): Promise<TokenExchangeResult>;
+  revoke?(input: {
+    accessToken: string;
+    clientId: string;
+    clientSecret: string;
+    mode: AdapterAuthMode;
+  }): Promise<void>;
+}

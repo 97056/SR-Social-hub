@@ -1,87 +1,81 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
-import Link from "next/link";
-import { ApiError, api } from "@/lib/api";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { AppShell, EmptyState, StatCard } from "@/components/shell";
+import { apiFetch, getToken } from "@/lib/api";
+import { adminNav } from "@/lib/nav";
 
-export default function AdminHome() {
-  const [overview, setOverview] = useState<Record<string, number> | null>(null);
-  const [error, setError] = useState("");
-  const [needsMfa, setNeedsMfa] = useState(false);
+type Overview = {
+  metrics: {
+    registeredCompanies: number;
+    activeCompanies: number;
+    trialAccounts: number;
+    activeClientWorkspaces: number;
+    enabledIntegrations: number;
+    monthlyRecurringRevenue: number;
+    totalPostsCreated: number;
+  };
+  recentActivity: Array<{
+    id: string;
+    action: string;
+    createdAt: string;
+    actor: { email: string; fullName: string } | null;
+  }>;
+};
+
+export default function AdminDashboardPage() {
+  const router = useRouter();
+  const [data, setData] = useState<Overview | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    api<Record<string, number>>("/api/admin/overview").then(setOverview).catch((err) => {
-      if (err instanceof ApiError && err.code === "mfa_enrollment_required") setNeedsMfa(true);
-      setError(err instanceof ApiError ? err.message : "Admin access was refused.");
-    });
-  }, []);
+    if (!getToken()) {
+      router.replace("/admin/login");
+      return;
+    }
+    apiFetch<Overview>("/admin/overview")
+      .then(setData)
+      .catch((err: Error) => setError(err.message));
+  }, [router]);
 
   return (
-    <div className="mx-auto max-w-4xl px-4 py-10">
-      <h1 className="text-3xl font-semibold tracking-tight">SR Social Admin</h1>
-      <p className="mt-2 text-sm">Super admin is never granted by public signup. Admin routes also require an authenticator when that policy is on.</p>
-      {needsMfa && <MfaEnrollment />}
-      {error && <p className="mt-4 text-sm">{error}</p>}
-      {overview && (
-        <dl className="mt-6 grid grid-cols-2 gap-3 md:grid-cols-3">
-          {Object.entries(overview).map(([key, value]) => (
-            <div key={key} className="rounded-brand bg-surface p-4">
-              <dt className="text-sm capitalize">{key.replaceAll(/[A-Z]/g, (letter) => ` ${letter.toLowerCase()}`)}</dt>
-              <dd className="text-2xl font-semibold">{value}</dd>
-            </div>
-          ))}
-        </dl>
-      )}
-      <nav className="mt-6 flex flex-wrap gap-4 text-sm">
-        <Link className="underline" href="/admin/theme">Appearance</Link>
-        <Link className="underline" href="/admin/integrations">Integrations</Link>
-        <Link className="underline" href="/admin/quotes">Quotes</Link>
-      </nav>
-    </div>
-  );
-}
-
-function MfaEnrollment() {
-  const [secret, setSecret] = useState("");
-  const [message, setMessage] = useState("");
-
-  async function start() {
-    try {
-      const setup = await api<{ secret: string; otpauthUrl: string }>("/api/auth/mfa/setup", { method: "POST" });
-      setSecret(setup.secret);
-      setMessage("Add this secret to an authenticator, then enter the current code. The secret is shown once.");
-    } catch (err) {
-      setMessage(err instanceof ApiError ? err.message : "Could not start authenticator setup.");
-    }
-  }
-
-  async function confirm(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const code = String(new FormData(event.currentTarget).get("code") || "");
-    try {
-      await api("/api/auth/mfa/confirm", { method: "POST", body: JSON.stringify({ code }) });
-      window.location.reload();
-    } catch (err) {
-      setMessage(err instanceof ApiError ? err.message : "That code was not accepted.");
-    }
-  }
-
-  return (
-    <section className="mt-6 max-w-lg rounded-brand bg-surface p-4">
-      <h2 className="text-xl font-semibold">Turn on an authenticator</h2>
-      <p className="mt-2 text-sm">Admin pages stay closed until this account has a verified authenticator.</p>
-      <Button className="mt-4" type="button" onClick={start}>Generate secret</Button>
-      {secret && <p className="mt-4 break-all font-mono text-sm">{secret}</p>}
-      {secret && (
-        <form onSubmit={confirm} className="mt-4 space-y-3">
-          <div><Label htmlFor="code">Authenticator code</Label><Input id="code" name="code" inputMode="numeric" autoComplete="one-time-code" required /></div>
-          <Button type="submit">Confirm</Button>
-        </form>
-      )}
-      {message && <p className="mt-3 text-sm">{message}</p>}
-    </section>
+    <AppShell title="Platform overview" subtitle="Super Admin" nav={adminNav()}>
+      {error ? <p className="mb-4 text-sm text-brand-error">{error}</p> : null}
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <StatCard label="Companies" value={data?.metrics.registeredCompanies ?? "—"} />
+        <StatCard label="Active" value={data?.metrics.activeCompanies ?? "—"} />
+        <StatCard label="Trials" value={data?.metrics.trialAccounts ?? "—"} />
+        <StatCard label="Client workspaces" value={data?.metrics.activeClientWorkspaces ?? "—"} />
+        <StatCard label="MRR (₹)" value={data?.metrics.monthlyRecurringRevenue ?? "—"} />
+        <StatCard label="Integrations on" value={data?.metrics.enabledIntegrations ?? "—"} />
+        <StatCard label="Posts created" value={data?.metrics.totalPostsCreated ?? 0} hint="From live data only" />
+      </div>
+      <div className="mt-4 grid gap-4 lg:grid-cols-2">
+        <div className="panel p-5">
+          <h2 className="font-display text-lg font-semibold">Recent activity</h2>
+          <ul className="mt-4 space-y-3">
+            {(data?.recentActivity ?? []).slice(0, 10).map((item) => (
+              <li key={item.id} className="flex items-start justify-between gap-3 text-sm">
+                <div>
+                  <p className="font-medium">{item.action}</p>
+                  <p className="text-content-muted">{item.actor?.fullName ?? "System"}</p>
+                </div>
+                <span className="whitespace-nowrap text-xs text-content-muted">
+                  {new Date(item.createdAt).toLocaleString()}
+                </span>
+              </li>
+            ))}
+            {!data?.recentActivity?.length ? (
+              <li className="text-sm text-content-muted">No audit events yet.</li>
+            ) : null}
+          </ul>
+        </div>
+        <EmptyState
+          title="Phase 2–3 controls online"
+          body="Manage companies, plans, encrypted social configs, branding, and system flags from the admin sidebar. Publishing and OAuth adapters remain later phases."
+        />
+      </div>
+    </AppShell>
   );
 }

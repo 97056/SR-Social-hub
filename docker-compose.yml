@@ -1,19 +1,36 @@
 services:
   postgres:
     image: postgres:16-alpine
+    container_name: sr-postgres
+    restart: unless-stopped
     environment:
-      POSTGRES_DB: sociallink
-      POSTGRES_USER: sociallink
-      POSTGRES_PASSWORD: change-me
+      POSTGRES_USER: sr
+      POSTGRES_PASSWORD: sr_dev_password
+      POSTGRES_DB: sr_social_hub
     ports:
       - "5432:5432"
     volumes:
-      - sociallink_pg:/var/lib/postgresql/data
+      - sr_pg_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U sociallink -d sociallink"]
+      test: ["CMD-SHELL", "pg_isready -U sr -d sr_social_hub"]
       interval: 5s
       timeout: 5s
-      retries: 20
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: sr-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - sr_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
 
 volumes:
-  sociallink_pg:
+  sr_pg_data:
+  sr_redis_data:

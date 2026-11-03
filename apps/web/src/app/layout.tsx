@@ -1,29 +1,19 @@
 import type { Metadata } from "next";
-import { IBM_Plex_Sans, Inter, Nunito_Sans, Source_Sans_3 } from "next/font/google";
-import { SiteFooter, SiteHeader } from "@/components/site-header";
-import { ThemeProvider } from "@/components/theme-provider";
+import { Manrope, Sora } from "next/font/google";
 import "./globals.css";
 
-const sourceSans = Source_Sans_3({ subsets: ["latin"], variable: "--font-source-sans" });
-const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
-const plex = IBM_Plex_Sans({ subsets: ["latin"], weight: ["400", "600"], variable: "--font-ibm-plex" });
-const nunito = Nunito_Sans({ subsets: ["latin"], variable: "--font-nunito" });
+const manrope = Manrope({ subsets: ["latin"], variable: "--font-manrope" });
+const sora = Sora({ subsets: ["latin"], variable: "--font-sora" });
 
 export const metadata: Metadata = {
-  title: "SR Social hub",
-  description: "All Your Socials. One Dashboard",
+  title: "SR Social Hub",
+  description: "AI-powered social media management for agencies and businesses",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body className={`${sourceSans.variable} ${inter.variable} ${plex.variable} ${nunito.variable}`}>
-        <ThemeProvider>
-          <SiteHeader />
-          <main id="content">{children}</main>
-          <SiteFooter />
-        </ThemeProvider>
-      </body>
+      <body className={`${manrope.variable} ${sora.variable}`}>{children}</body>
     </html>
   );
 }
