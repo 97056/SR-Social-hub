@@ -18,23 +18,33 @@ https://<your-api-host>/api/v1/oauth/callback
 
 ## Branding + legal URLs (required by most developer consoles)
 
-Providers usually ask for logo, privacy policy, terms, and a delete-account / data-deletion page. Local pages are live on the web app:
+Providers usually ask for logo, privacy policy, terms, and a delete-account / data-deletion page.
 
-| Field | Local URL |
+### Use these public HTTPS URLs now (currently live on srsocialhub.in)
+
+The Hostinger site is still on an older deployment that uses `/legal/...` paths. These work today:
+
+| Field | Public URL (use in Meta/Google/etc.) |
 | --- | --- |
-| App logo | http://localhost:3000/brand/logo.svg |
-| Privacy Policy | http://localhost:3000/privacy |
-| Terms of Service | http://localhost:3000/terms |
-| Delete account / user data | http://localhost:3000/delete-account |
-| Support / contact | http://localhost:3000/support |
+| Privacy Policy | https://srsocialhub.in/legal/privacy |
+| Terms of Service | https://srsocialhub.in/legal/terms |
+| Delete account / user data | https://srsocialhub.in/legal/data-deletion |
+| Support / contact | https://srsocialhub.in/contact |
+| App logo | Upload a square PNG in the console (1024×1024 preferred). Site favicon may work temporarily. |
 
-**Important:** Meta, Google, and others often require **public HTTPS** URLs (not `localhost`) before app review or live mode. For collection now you can:
+Do **not** use `https://srsocialhub.in/privacy` until a new Hostinger deploy succeeds — that path 404s on the current live build.
 
-1. Use the local URLs above while filling drafts, or
-2. Expose the web app with a tunnel (e.g. ngrok) and replace `localhost:3000` with your HTTPS host, or
-3. Deploy web to a staging domain and use those URLs.
+### Local / after next successful deploy
 
-Replace the placeholder logo at `apps/web/public/brand/logo.svg` with your real logo (PNG/SVG). Prefer square **1024×1024 PNG** for Meta app icons when uploading in the developer console.
+| Field | URL |
+| --- | --- |
+| App logo | http://localhost:3000/brand/logo.svg → later https://srsocialhub.in/brand/logo.svg |
+| Privacy | http://localhost:3000/privacy |
+| Terms | http://localhost:3000/terms |
+| Delete account | http://localhost:3000/delete-account |
+| Support | http://localhost:3000/support |
+
+After the Nest/Next rebuild deploys successfully, `/legal/*` redirects to the new pages automatically.
 
 ## Where to paste keys in SR Social Hub
 
