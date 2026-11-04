@@ -15,6 +15,7 @@ import { ApprovalsModule } from "./approvals/approvals.module";
 import { ComposerModule } from "./composer/composer.module";
 import { MediaModule } from "./media/media.module";
 import { PublishingModule } from "./publishing/publishing.module";
+import { PublicModule } from "./public/public.module";
 import { SocialModule } from "./social/social.module";
 
 @Module({
@@ -22,6 +23,7 @@ import { SocialModule } from "./social/social.module";
     ConfigModule.forRoot({ isGlobal: true }),
     PrismaModule,
     HealthModule,
+    PublicModule,
     AuthModule,
     BrandingModule,
     CompaniesModule,

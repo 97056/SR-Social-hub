@@ -4,17 +4,19 @@ Use this file while creating developer apps for each network. Paste values into 
 
 ## Shared redirect URI (required for all apps)
 
-Register this exact callback in every provider console:
+**Production (register this in Meta once API subdomain is live):**
+
+```text
+https://api.srsocialhub.in/api/v1/oauth/callback
+```
+
+Local development:
 
 ```text
 http://localhost:4000/api/v1/oauth/callback
 ```
 
-Production later:
-
-```text
-https://<your-api-host>/api/v1/oauth/callback
-```
+Full live URL list: [live-oauth-urls.md](./live-oauth-urls.md) and https://srsocialhub.in/integrations
 
 ## Branding + legal URLs (required by most developer consoles)
 

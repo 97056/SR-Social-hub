@@ -54,30 +54,14 @@ function SocialAccountsInner() {
     setItems(list);
   }
 
-  useEffect(() => {
-    if (!getToken()) {
-      router.replace("/login");
-      return;
-    }
-    const connected = search.get("connected");
-    const mode = search.get("mode");
-    if (connected) {
-      setNotice(
-        mode === "mock"
-          ? `${connected} connected in mock mode (architecture verified — not a live Facebook auth).`
-          : `${connected} connected via live OAuth.`,
-      );
-    }
-    load().catch((e: Error) => setError(e.message));
-  }, [clientId, router, search]);
-
-  async function connect(platform: string) {
-    if (!companyId) return;
+  async function connect(platform: string, cid?: string) {
+    const company = cid ?? companyId;
+    if (!company) return;
     setBusy(platform);
     setError(null);
     try {
       const res = await apiFetch<{ authorizeUrl: string; note: string }>(
-        `/companies/${companyId}/clients/${clientId}/social-accounts/${platform}/connect`,
+        `/companies/${company}/clients/${clientId}/social-accounts/${platform}/connect`,
         {
           method: "POST",
           body: JSON.stringify({
@@ -92,6 +76,38 @@ function SocialAccountsInner() {
       setBusy(null);
     }
   }
+
+  useEffect(() => {
+    if (!getToken()) {
+      router.replace("/login");
+      return;
+    }
+    const connected = search.get("connected");
+    const mode = search.get("mode");
+    if (connected) {
+      setNotice(
+        mode === "mock"
+          ? `${connected} connected in mock mode (architecture verified — not a live Facebook auth).`
+          : `${connected} connected via live OAuth.`,
+      );
+    }
+    (async () => {
+      try {
+        const [workspace, list] = await Promise.all([
+          apiFetch<Workspace>(`/clients/${clientId}/workspace`),
+          apiFetch<PlatformCard[]>(`/clients/${clientId}/social-accounts`),
+        ]);
+        setCompanyId(workspace.client.companyId);
+        setItems(list);
+        const auto = search.get("connect")?.toUpperCase();
+        if (auto && !search.get("connected")) {
+          await connect(auto, workspace.client.companyId);
+        }
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Failed to load");
+      }
+    })();
+  }, [clientId, router, search]);
 
   async function disconnect(accountId: string) {
     setBusy(accountId);

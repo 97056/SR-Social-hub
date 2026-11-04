@@ -6,6 +6,7 @@ const links = [
   { href: "/terms", label: "Terms of Service" },
   { href: "/delete-account", label: "Delete Account / Data" },
   { href: "/support", label: "Support" },
+  { href: "/integrations", label: "Integration URLs" },
 ];
 
 export function LegalShell({

@@ -46,6 +46,9 @@ export default function HomePage() {
         <Link href="/support" className="hover:text-white">
           Support
         </Link>
+        <Link href="/integrations" className="hover:text-white">
+          Integration URLs
+        </Link>
       </footer>
     </main>
   );

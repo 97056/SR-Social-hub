@@ -10,8 +10,16 @@ async function bootstrap() {
 
   app.use(helmet());
   app.use(cookieParser());
+  const corsOrigins = (
+    process.env.CORS_ORIGINS ??
+    process.env.WEB_URL ??
+    "http://localhost:3000,https://srsocialhub.in,https://www.srsocialhub.in"
+  )
+    .split(",")
+    .map((o) => o.trim())
+    .filter(Boolean);
   app.enableCors({
-    origin: process.env.WEB_URL ?? "http://localhost:3000",
+    origin: corsOrigins,
     credentials: true,
   });
   app.setGlobalPrefix("api/v1");

@@ -9,11 +9,26 @@ import { JwtService } from "@nestjs/jwt";
 import { GlobalRole } from "@prisma/client";
 import * as bcrypt from "bcryptjs";
 import { createHash, randomBytes } from "crypto";
-import type { LoginResponse } from "@sr/shared";
 import { hashToken } from "../common/crypto.util";
 import { PrismaService } from "../prisma/prisma.service";
 import type { AuthUser } from "./jwt.strategy";
 import type { AcceptInviteDto } from "./dto/accept-invite.dto";
+
+type LoginResponse = {
+  accessToken: string;
+  user: {
+    id: string;
+    email: string;
+    fullName: string;
+    globalRole: "SUPER_ADMIN" | "USER";
+  };
+  workspaces: {
+    isSuperAdmin: boolean;
+    companies: Array<{ id: string; name: string; role: string }>;
+    clients: Array<{ id: string; name: string; companyId: string; role: string }>;
+  };
+  redirectTo: string;
+};
 
 @Injectable()
 export class AuthService {
