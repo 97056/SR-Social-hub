@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { AppShell } from "@/components/shell";
+import { toast } from "@/components/toast";
 import { apiFetch, getToken } from "@/lib/api";
 import { companyNav } from "@/lib/nav";
 
@@ -21,26 +22,52 @@ export default function PostsPage() {
   const companyId = params.companyId;
   const [posts, setPosts] = useState<Post[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+
+  async function load() {
+    setPosts(await apiFetch<Post[]>(`/companies/${companyId}/posts`));
+  }
 
   useEffect(() => {
     if (!getToken()) {
       router.replace("/login");
       return;
     }
-    apiFetch<Post[]>(`/companies/${companyId}/posts`)
-      .then(setPosts)
-      .catch((e: Error) => setError(e.message));
+    load().catch((e: Error) => setError(e.message));
   }, [companyId, router]);
+
+  async function publishNow(postId: string) {
+    setBusy(postId);
+    setError(null);
+    try {
+      await apiFetch(`/posts/${postId}/publish`, { method: "POST", body: "{}" });
+      toast.success("Publishing", "Post queued to connected networks");
+      await load();
+      router.push(`/app/${companyId}/publishing`);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Publish failed";
+      setError(message);
+      toast.error("Publish failed", message);
+    } finally {
+      setBusy(null);
+    }
+  }
 
   return (
     <AppShell title="Posts" subtitle="Company workspace" nav={companyNav(companyId)}>
       {error ? <p className="mb-4 text-sm text-brand-error">{error}</p> : null}
-      <div className="mb-4">
+      <div className="mb-4 flex flex-wrap gap-2">
         <button
           className="rounded-xl bg-brand-primary px-4 py-2 text-sm font-semibold text-white"
           onClick={() => router.push(`/app/${companyId}/create`)}
         >
           Create post
+        </button>
+        <button
+          className="rounded-xl border border-white/15 px-4 py-2 text-sm font-semibold text-white"
+          onClick={() => router.push(`/app/${companyId}/publishing`)}
+        >
+          Publishing queue
         </button>
       </div>
       <div className="panel overflow-hidden">
@@ -52,6 +79,7 @@ export default function PostsPage() {
               <th className="px-4 py-3">Targets</th>
               <th className="px-4 py-3">Status</th>
               <th className="px-4 py-3">Updated</th>
+              <th className="px-4 py-3">Action</th>
             </tr>
           </thead>
           <tbody>
@@ -68,11 +96,31 @@ export default function PostsPage() {
                 <td className="px-4 py-3 text-xs text-content-muted">
                   {new Date(p.updatedAt).toLocaleString()}
                 </td>
+                <td className="px-4 py-3">
+                  {["APPROVED", "FAILED", "SCHEDULED"].includes(p.status) ? (
+                    <button
+                      className="rounded-lg bg-brand-primary px-3 py-1.5 text-xs font-semibold text-[#050814] disabled:opacity-50"
+                      disabled={busy === p.id}
+                      onClick={() => publishNow(p.id)}
+                    >
+                      {busy === p.id ? "Queuing…" : "Publish now"}
+                    </button>
+                  ) : p.status === "PUBLISHING" || p.status === "PUBLISHED" ? (
+                    <button
+                      className="rounded-lg border border-white/15 px-3 py-1.5 text-xs"
+                      onClick={() => router.push(`/app/${companyId}/publishing`)}
+                    >
+                      View queue
+                    </button>
+                  ) : (
+                    <span className="text-xs text-content-muted">—</span>
+                  )}
+                </td>
               </tr>
             ))}
             {!posts.length ? (
               <tr>
-                <td className="px-4 py-6 text-content-muted" colSpan={5}>
+                <td className="px-4 py-6 text-content-muted" colSpan={6}>
                   No posts yet.
                 </td>
               </tr>

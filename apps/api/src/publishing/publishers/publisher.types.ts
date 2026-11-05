@@ -14,6 +14,8 @@ export type PublishPayload = {
     mimeType: string;
     storageKey: string;
     kind: string;
+    /** Needed for Instagram signed public image_url */
+    assetId?: string;
   } | null;
 };
 

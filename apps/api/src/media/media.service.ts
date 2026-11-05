@@ -106,6 +106,10 @@ export class MediaService {
     return asset;
   }
 
+  async getById(assetId: string) {
+    return this.prisma.mediaAsset.findUnique({ where: { id: assetId } });
+  }
+
   async getAuthorized(assetId: string, user: AuthUser) {
     const asset = await this.prisma.mediaAsset.findUnique({ where: { id: assetId } });
     if (!asset) throw new NotFoundException("Media not found");

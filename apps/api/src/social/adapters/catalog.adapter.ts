@@ -154,9 +154,10 @@ export class CatalogSocialAdapter implements SocialAdapter {
         : this.getDefaultScopes();
 
     const profile = await this.fetchLiveProfile(json.access_token);
-    const suffix = createHash("sha256").update(json.access_token).digest("hex").slice(0, 8);
+    const accessToken = profile.accessToken || json.access_token;
+    const suffix = createHash("sha256").update(accessToken).digest("hex").slice(0, 8);
     return {
-      accessToken: json.access_token,
+      accessToken,
       refreshToken: json.refresh_token ?? null,
       tokenType: json.token_type ?? "bearer",
       expiresAt: json.expires_in ? new Date(Date.now() + json.expires_in * 1000) : null,
@@ -195,37 +196,66 @@ export class CatalogSocialAdapter implements SocialAdapter {
     accountName?: string | null;
     username?: string | null;
     pageIdentifier?: string | null;
+    accessToken?: string;
     rawMeta?: Record<string, unknown>;
   }> {
-    if (this.entry.code !== "PINTEREST") return {};
     try {
-      const res = await fetch("https://api.pinterest.com/v5/user_account", {
-        headers: { Authorization: `Bearer ${accessToken}` },
-      });
-      if (!res.ok) {
-        // Token is valid even if profile lookup fails — connect still succeeds.
-        return {};
+      if (this.entry.code === "PINTEREST") {
+        const res = await fetch("https://api.pinterest.com/v5/user_account", {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        });
+        if (!res.ok) return {};
+        const user = (await res.json()) as {
+          id?: string;
+          username?: string;
+          business_name?: string;
+          account_type?: string;
+        };
+        const username = user.username || null;
+        return {
+          externalAccountId: user.id || username || undefined,
+          accountName: user.business_name || username || "Pinterest Account",
+          username,
+          pageIdentifier: user.id || username || null,
+          rawMeta: { accountType: user.account_type ?? null },
+        };
       }
-      const user = (await res.json()) as {
-        id?: string;
-        username?: string;
-        business_name?: string;
-        account_type?: string;
-      };
-      const username = user.username || null;
-      return {
-        externalAccountId: user.id || username || undefined,
-        accountName: user.business_name || username || "Pinterest Account",
-        username,
-        pageIdentifier: user.id || username || null,
-        rawMeta: {
-          accountType: user.account_type ?? null,
-          boardsChecked: false,
-        },
-      };
+
+      if (this.entry.code === "INSTAGRAM") {
+        const version = "v21.0";
+        const pagesUrl = new URL(`https://graph.facebook.com/${version}/me/accounts`);
+        pagesUrl.searchParams.set(
+          "fields",
+          "id,name,access_token,instagram_business_account{id,username,name}",
+        );
+        pagesUrl.searchParams.set("access_token", accessToken);
+        const pagesRes = await fetch(pagesUrl);
+        if (!pagesRes.ok) return {};
+        const pagesJson = (await pagesRes.json()) as {
+          data?: Array<{
+            id: string;
+            name: string;
+            access_token?: string;
+            instagram_business_account?: { id: string; username?: string; name?: string };
+          }>;
+        };
+        const page = pagesJson.data?.find((p) => p.instagram_business_account?.id);
+        const ig = page?.instagram_business_account;
+        if (!page || !ig?.id) return {};
+        return {
+          externalAccountId: ig.id,
+          accountName: ig.name || ig.username || page.name,
+          username: ig.username || null,
+          pageIdentifier: page.id,
+          // Page token is required for Instagram content publishing.
+          accessToken: page.access_token || accessToken,
+          rawMeta: { pageId: page.id, igUserId: ig.id },
+        };
+      }
     } catch {
       return {};
     }
+    return {};
   }
 
   async revoke(input: {

@@ -19,6 +19,7 @@ import { CurrentUser } from "../common/decorators/current-user.decorator";
 import { CompanyAccessGuard } from "../common/guards/company-access.guard";
 import { JwtAuthGuard } from "../common/guards/jwt-auth.guard";
 import { MAX_UPLOAD_BYTES } from "./media.constants";
+import { verifySignedMediaUrl } from "./media-public-url";
 import { MediaService } from "./media.service";
 
 @ApiTags("media")
@@ -90,6 +91,25 @@ export class MediaController {
       `inline; filename="${opened.filename.replace(/"/g, "")}"`,
     );
     res.setHeader("Cache-Control", "private, max-age=60");
+    opened.stream.pipe(res);
+  }
+
+  /** Short-lived signed URL used by Instagram Graph image_url publishing. */
+  @Get("public/media/:assetId")
+  async publicFile(
+    @Param("assetId") assetId: string,
+    @Query("exp") exp: string,
+    @Query("sig") sig: string,
+    @Res() res: Response,
+  ) {
+    if (!exp || !sig || !verifySignedMediaUrl(assetId, exp, sig)) {
+      return res.status(403).json({ message: "Invalid or expired media link" });
+    }
+    const asset = await this.media.getById(assetId);
+    if (!asset) return res.status(404).json({ message: "Media not found" });
+    const opened = this.media.openStream(asset);
+    res.setHeader("Content-Type", opened.mimeType);
+    res.setHeader("Cache-Control", "public, max-age=300");
     opened.stream.pipe(res);
   }
 

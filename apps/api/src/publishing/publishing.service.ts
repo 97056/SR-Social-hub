@@ -55,7 +55,27 @@ export class PublishingService {
 
     const jobs = [];
     for (const target of post.targets) {
-      if (!target.socialAccountId) {
+      let socialAccountId = target.socialAccountId;
+      if (!socialAccountId) {
+        const connected = await this.prisma.socialAccount.findFirst({
+          where: {
+            clientId: post.clientId,
+            companyId: post.companyId,
+            platformCode: target.platformCode,
+            status: "CONNECTED",
+          },
+          orderBy: { updatedAt: "desc" },
+        });
+        if (connected) {
+          socialAccountId = connected.id;
+          await this.prisma.postTarget.update({
+            where: { id: target.id },
+            data: { socialAccountId: connected.id },
+          });
+        }
+      }
+
+      if (!socialAccountId) {
         const assistedKey = this.idempotencyKey(post.id, post.revision, target.platformCode, "none");
         const existing = await this.prisma.publishingJob.findUnique({
           where: { idempotencyKey: assistedKey },
@@ -89,7 +109,7 @@ export class PublishingService {
         post.id,
         post.revision,
         target.platformCode,
-        target.socialAccountId,
+        socialAccountId,
       );
       const existing = await this.prisma.publishingJob.findUnique({ where: { idempotencyKey: key } });
       if (existing && !["CANCELLED", "FAILED"].includes(existing.status)) {
@@ -109,6 +129,7 @@ export class PublishingService {
             data: {
               status,
               scheduledAt,
+              socialAccountId,
               nextAttemptAt: status === "QUEUED" ? new Date() : scheduledAt,
               approvalVerifiedAt: new Date(),
               contentRevision: post.revision,
@@ -124,7 +145,7 @@ export class PublishingService {
               clientId: post.clientId,
               postId: post.id,
               postTargetId: target.id,
-              socialAccountId: target.socialAccountId,
+              socialAccountId,
               platformCode: target.platformCode,
               contentRevision: post.revision,
               approvalVerifiedAt: new Date(),
@@ -310,6 +331,7 @@ export class PublishingService {
               mimeType: job.post.mediaAsset.mimeType,
               storageKey: job.post.mediaAsset.storageKey,
               kind: job.post.mediaAsset.kind,
+              assetId: job.post.mediaAsset.id,
             }
           : null,
       });

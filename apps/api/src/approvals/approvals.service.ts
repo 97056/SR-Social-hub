@@ -1,13 +1,16 @@
 import {
   BadRequestException,
   ForbiddenException,
+  Inject,
   Injectable,
   NotFoundException,
+  forwardRef,
 } from "@nestjs/common";
 import { ApprovalDecision, ApprovalStep, ApprovalWorkflow } from "@prisma/client";
 import type { AuthUser } from "../auth/jwt.strategy";
 import { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
+import { PublishingService } from "../publishing/publishing.service";
 import {
   autoScheduleOnFinalApproval,
   nextStep,
@@ -20,6 +23,8 @@ export class ApprovalsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
+    @Inject(forwardRef(() => PublishingService))
+    private readonly publishing: PublishingService,
   ) {}
 
   async startApprovalFlow(postId: string, actorId: string) {
@@ -292,7 +297,23 @@ export class ApprovalsService {
       workflow: approval.post.client.approvalWorkflow,
     });
 
-    return updated;
+    // Move approved posts into the publishing queue so they actually go live.
+    try {
+      const immediate =
+        !shouldAutoSchedule ||
+        !approval.post.scheduledAt ||
+        approval.post.scheduledAt.getTime() <= Date.now();
+      await this.publishing.enqueuePost(approval.postId, user, { immediate });
+    } catch (error) {
+      await this.audit(user.id, approval.post.companyId, "PUBLISH_ENQUEUE_FAILED", approval.postId, {
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+
+    return this.prisma.contentPost.findUnique({
+      where: { id: approval.postId },
+      include: { approvals: true, client: true, targets: true },
+    });
   }
 
   /**
