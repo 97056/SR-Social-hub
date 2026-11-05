@@ -17,6 +17,9 @@ export const metadata: Metadata = {
   title: "SR Social Hub",
   description:
     "All-in-one social media management for agencies — create, approve, and publish across Facebook, Instagram, LinkedIn, X, YouTube, Pinterest, and Threads.",
+  verification: {
+    google: "K196_gQOD-QoNrSCxzFlkbMywyT3_ZvwN1Lv1ey2RAQ",
+  },
   icons: {
     icon: [{ url: "/brand/favicon.png", type: "image/png", sizes: "1024x1024" }],
     apple: [{ url: "/brand/logo-mark.png", sizes: "1024x1024" }],
