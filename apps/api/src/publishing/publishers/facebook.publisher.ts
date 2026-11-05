@@ -1,8 +1,9 @@
 import { SocialPlatformCode } from "@prisma/client";
 import { createHash, randomBytes } from "crypto";
-import { readFileSync } from "fs";
+import { existsSync, readFileSync } from "fs";
 import { join } from "path";
 import { MEDIA_ROOT } from "../../media/media.constants";
+import { buildSignedMediaUrl } from "../../media/media-public-url";
 import type { PlatformPublisher, PublishPayload, PublishResult } from "./publisher.types";
 
 /**
@@ -33,20 +34,39 @@ export class FacebookPublisher implements PlatformPublisher {
 
       if (payload.media?.kind === "IMAGE") {
         const abs = join(MEDIA_ROOT, payload.media.storageKey);
-        const bytes = readFileSync(abs);
         const form = new FormData();
         form.set("message", message);
         form.set("access_token", payload.accessToken);
-        form.set(
-          "source",
-          new Blob([new Uint8Array(bytes)], { type: payload.media.mimeType }),
-          "upload.jpg",
-        );
+
+        if (existsSync(abs)) {
+          const bytes = readFileSync(abs);
+          form.set(
+            "source",
+            new Blob([new Uint8Array(bytes)], { type: payload.media.mimeType }),
+            "upload.jpg",
+          );
+        } else if (payload.media.assetId) {
+          // Prefer public URL when the file isn't on this disk (or after a prior no-volume deploy).
+          form.set("url", buildSignedMediaUrl(payload.media.assetId, 3600));
+        } else {
+          return {
+            ok: false,
+            status: "FAILED",
+            retryable: false,
+            error:
+              "Media file missing on server. Re-upload the image on the post, then Publish again.",
+          };
+        }
+
         const res = await fetch(
           `https://graph.facebook.com/${version}/${payload.externalAccountId}/photos`,
           { method: "POST", body: form },
         );
-        const json = (await res.json()) as { id?: string; post_id?: string; error?: { message: string; code?: number } };
+        const json = (await res.json()) as {
+          id?: string;
+          post_id?: string;
+          error?: { message: string; code?: number };
+        };
         if (!res.ok || json.error) {
           return this.mapError(json.error?.message ?? "Facebook photo publish failed", json.error?.code);
         }
@@ -79,11 +99,20 @@ export class FacebookPublisher implements PlatformPublisher {
         raw: json,
       };
     } catch (error) {
+      const message = error instanceof Error ? error.message : "Facebook publish error";
+      if (/ENOENT|no such file/i.test(message)) {
+        return {
+          ok: false,
+          status: "FAILED",
+          retryable: false,
+          error: "Media file missing on server. Re-upload the image on the post, then Publish again.",
+        };
+      }
       return {
         ok: false,
         status: "RETRY_PENDING",
         retryable: true,
-        error: error instanceof Error ? error.message : "Facebook publish error",
+        error: message,
       };
     }
   }

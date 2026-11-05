@@ -24,6 +24,17 @@ export class InstagramPublisher implements PlatformPublisher {
       };
     }
 
+    // Old connects stored a hash placeholder (ig_live_…) instead of a real IG user id.
+    if (/^ig_live_/i.test(payload.externalAccountId) || !/^\d+$/.test(payload.externalAccountId)) {
+      return {
+        ok: false,
+        status: "REQUIRES_REAUTH",
+        retryable: false,
+        error:
+          "Instagram account ID is invalid. Disconnect Instagram, connect again (must link a Professional account to a Facebook Page), then Publish.",
+      };
+    }
+
     if (!payload.media || payload.media.kind !== "IMAGE") {
       return {
         ok: false,

@@ -27,7 +27,11 @@ services:
     environment:
       NODE_ENV: production
       API_PORT: "4000"
+      MEDIA_ROOT: /app/.data/media
       DATABASE_URL: postgresql://sr:${POSTGRES_PASSWORD}@postgres:5432/sr_social_hub?schema=public
+    volumes:
+      # Persist uploaded media across container rebuilds (required for FB/IG publish).
+      - sr_media_data:/app/.data/media
     depends_on:
       postgres:
         condition: service_healthy
@@ -37,6 +41,7 @@ services:
 
 volumes:
   sr_pg_data:
+  sr_media_data:
 
 networks:
   sr:
