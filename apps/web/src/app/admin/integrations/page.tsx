@@ -36,7 +36,9 @@ export default function AdminIntegrationsPage() {
       next[item.code] = {
         oauthClientId: item.config?.oauthClientId ?? "",
         clientSecret: "",
-        redirectUri: item.config?.redirectUri ?? "http://localhost:4000/api/v1/oauth/callback",
+        redirectUri:
+          item.config?.redirectUri ??
+          `${process.env.NEXT_PUBLIC_API_URL ?? "https://api.srsocialhub.in"}/api/v1/oauth/callback`,
       };
     }
     setDrafts(next);
