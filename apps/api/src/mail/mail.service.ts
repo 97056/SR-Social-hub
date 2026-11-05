@@ -26,7 +26,7 @@ const DEFAULT_MAIL: MailSettings = {
   smtpSecure: false,
   smtpUser: "",
   smtpPass: "",
-  fromEmail: "",
+  fromEmail: "support@srsocialhub.in",
   fromName: "SR Social Hub",
   sendgridApiKey: "",
   twilioAccountSid: "",
@@ -54,7 +54,9 @@ export class MailService {
       smtpUser: this.config.get<string>("SMTP_USER") || "",
       smtpPass: this.config.get<string>("SMTP_PASS") || "",
       fromEmail:
-        this.config.get<string>("SMTP_FROM_EMAIL") || this.config.get<string>("SMTP_USER") || "",
+        this.config.get<string>("SMTP_FROM_EMAIL") ||
+        this.config.get<string>("SMTP_USER") ||
+        DEFAULT_MAIL.fromEmail,
       fromName: this.config.get<string>("SMTP_FROM_NAME") || DEFAULT_MAIL.fromName,
     };
     const merged: MailSettings = { ...fromEnv, ...stored };

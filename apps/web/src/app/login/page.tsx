@@ -4,6 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useState } from "react";
+import { PasswordField } from "@/components/password-field";
 import { toast } from "@/components/toast";
 import { loginRequest, setSessionUser, setToken } from "@/lib/api";
 import { isEmail, requireFields } from "@/lib/validate";
@@ -102,16 +103,7 @@ export default function LoginPage() {
                 placeholder="you@company.com"
               />
             </label>
-            <label className="block text-xs text-content-muted">
-              Password
-              <input
-                className="field"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                type="password"
-                placeholder="••••••••"
-              />
-            </label>
+            <PasswordField value={password} onChange={setPassword} />
             <div className="flex justify-end">
               <Link href="/forgot-password" className="text-xs text-brand-primary hover:underline">
                 Forgot password?

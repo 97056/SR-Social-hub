@@ -19,7 +19,7 @@ export const FALLBACK_BRANDING: PublicBranding = {
   loginHeadline: "One spark. Every feed.",
   loginSubcopy:
     "Draft, approve, and publish across your networks from one neon command — without the tab chaos.",
-  supportEmail: "support@srsocialhub.local",
+  supportEmail: "support@srsocialhub.in",
   themeDefault: "dark",
 };
 

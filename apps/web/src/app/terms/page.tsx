@@ -89,8 +89,8 @@ export default function TermsPage() {
       <h2>10. Contact</h2>
       <p>
         Legal questions:{" "}
-        <a className="text-brand-secondary underline" href="mailto:legal@srsocialhub.local">
-          legal@srsocialhub.local
+        <a className="text-brand-secondary underline" href="mailto:support@srsocialhub.in">
+          support@srsocialhub.in
         </a>
         .
       </p>

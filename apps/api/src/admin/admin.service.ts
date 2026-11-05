@@ -85,7 +85,7 @@ const DEFAULT_FAQS: FaqItem[] = [
     id: "faq-delete",
     question: "How do I delete my account or request data removal?",
     answer:
-      "Use the Delete account page (/delete-account) or email privacy@srsocialhub.local. We’ll process deletion requests according to our Privacy Policy.",
+      "Use the Delete account page (/delete-account) or email support@srsocialhub.in. We’ll process deletion requests according to our Privacy Policy.",
     published: true,
     sortOrder: 6,
   },
@@ -100,7 +100,7 @@ const DEFAULT_BRANDING = {
   loginHeadline: "All your socials. One command center.",
   loginSubcopy:
     "Agency workspaces, client approvals, and multi-network publishing from one neon-bright hub.",
-  supportEmail: "support@srsocialhub.local",
+  supportEmail: "support@srsocialhub.in",
   themeDefault: "dark",
 };
 

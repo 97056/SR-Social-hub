@@ -25,8 +25,8 @@ export default function DeleteAccountPage() {
         </li>
         <li>
           Email{" "}
-          <a className="text-brand-secondary underline" href="mailto:privacy@srsocialhub.local">
-            privacy@srsocialhub.local
+          <a className="text-brand-secondary underline" href="mailto:support@srsocialhub.in">
+            support@srsocialhub.in
           </a>{" "}
           from your registered email with subject <strong>Account deletion request</strong>.
         </li>
@@ -84,8 +84,8 @@ export default function DeleteAccountPage() {
 
       <h2>7. Contact</h2>
       <p>
-        <a className="text-brand-secondary underline" href="mailto:privacy@srsocialhub.local">
-          privacy@srsocialhub.local
+        <a className="text-brand-secondary underline" href="mailto:support@srsocialhub.in">
+          support@srsocialhub.in
         </a>{" "}
         ·{" "}
         <a className="text-brand-secondary underline" href="/support">

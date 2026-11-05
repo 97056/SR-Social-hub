@@ -4,6 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useState } from "react";
+import { PasswordField } from "@/components/password-field";
 import { toast } from "@/components/toast";
 import { loginRequest, setSessionUser, setToken } from "@/lib/api";
 import { isEmail, requireFields } from "@/lib/validate";
@@ -69,15 +70,11 @@ export default function AdminLoginPage() {
             type="email"
           />
         </label>
-        <label className="block text-sm">
-          <span className="text-content-muted">Password</span>
-          <input
-            className="field"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            type="password"
-          />
-        </label>
+        <PasswordField
+          className="block text-sm text-content-muted"
+          value={password}
+          onChange={setPassword}
+        />
         {error ? <p className="text-sm text-brand-error">{error}</p> : null}
         <button disabled={loading} className="btn-primary w-full py-3">
           {loading ? "Verifying…" : "Enter admin"}

@@ -140,7 +140,7 @@ async function main() {
         loginHeadline: "All your socials. One command center.",
         loginSubcopy:
           "Agency workspaces, client approvals, and multi-network publishing from one neon-bright hub.",
-        supportEmail: "support@srsocialhub.local",
+        supportEmail: "support@srsocialhub.in",
         themeDefault: "dark",
       },
     },
@@ -155,7 +155,7 @@ async function main() {
         loginHeadline: "All your socials. One command center.",
         loginSubcopy:
           "Agency workspaces, client approvals, and multi-network publishing from one neon-bright hub.",
-        supportEmail: "support@srsocialhub.local",
+        supportEmail: "support@srsocialhub.in",
         themeDefault: "dark",
       },
     },
@@ -206,7 +206,7 @@ async function main() {
       id: "faq-delete",
       question: "How do I delete my account or request data removal?",
       answer:
-        "Use the Delete account page (/delete-account) or email privacy@srsocialhub.local. We’ll process deletion requests according to our Privacy Policy.",
+        "Use the Delete account page (/delete-account) or email support@srsocialhub.in. We’ll process deletion requests according to our Privacy Policy.",
       published: true,
       sortOrder: 6,
     },
@@ -218,39 +218,71 @@ async function main() {
     create: { key: "faqs", value: { items: faqItems } },
   });
 
+  const mailValue = {
+    provider: "smtp",
+    smtpHost: process.env.SMTP_HOST || "smtp.gmail.com",
+    smtpPort: Number(process.env.SMTP_PORT || 587),
+    smtpSecure: String(process.env.SMTP_SECURE || "false") === "true",
+    smtpUser: process.env.SMTP_USER || "",
+    smtpPass: process.env.SMTP_PASS || "",
+    fromEmail: process.env.SMTP_FROM_EMAIL || "support@srsocialhub.in",
+    fromName: process.env.SMTP_FROM_NAME || "SR Social Hub",
+    sendgridApiKey: "",
+    twilioAccountSid: "",
+    twilioAuthToken: "",
+    twilioFromNumber: "",
+  };
+
   await prisma.systemSetting.upsert({
     where: { key: "mail" },
-    update: {},
+    update: { value: mailValue },
     create: {
       key: "mail",
-      value: {
-        provider: "smtp",
-        smtpHost: process.env.SMTP_HOST || "smtp.gmail.com",
-        smtpPort: Number(process.env.SMTP_PORT || 587),
-        smtpSecure: String(process.env.SMTP_SECURE || "false") === "true",
-        smtpUser: process.env.SMTP_USER || "",
-        smtpPass: process.env.SMTP_PASS || "",
-        fromEmail: process.env.SMTP_FROM_EMAIL || process.env.SMTP_USER || "",
-        fromName: process.env.SMTP_FROM_NAME || "SR Social Hub",
-        sendgridApiKey: "",
-        twilioAccountSid: "",
-        twilioAuthToken: "",
-        twilioFromNumber: "",
-      },
+      value: mailValue,
     },
   });
 
-  const adminEmail = (process.env.SUPER_ADMIN_EMAIL ?? "admin@srsocialhub.local").toLowerCase();
+  const adminEmail = (process.env.SUPER_ADMIN_EMAIL ?? "support@srsocialhub.in").toLowerCase();
+  const adminPassword = process.env.SUPER_ADMIN_PASSWORD ?? "ChangeMeAdmin!123";
+  const adminPasswordHash = await bcrypt.hash(adminPassword, 10);
+
+  // Migrate legacy local/admin emails to the canonical support inbox.
+  for (const legacy of ["admin@srsocialhub.local", "admin@srsocialhub.in"]) {
+    if (legacy === adminEmail) continue;
+    const existing = await prisma.user.findUnique({ where: { email: legacy } });
+    if (!existing) continue;
+    const taken = await prisma.user.findUnique({ where: { email: adminEmail } });
+    if (taken && taken.id !== existing.id) {
+      await prisma.user.delete({ where: { id: existing.id } });
+    } else {
+      await prisma.user.update({
+        where: { id: existing.id },
+        data: {
+          email: adminEmail,
+          passwordHash: adminPasswordHash,
+          isActive: true,
+          emailVerifiedAt: new Date(),
+          globalRole: GlobalRole.SUPER_ADMIN,
+        },
+      });
+    }
+  }
 
   const admin = await prisma.user.upsert({
     where: { email: adminEmail },
-    update: { isActive: true, emailVerifiedAt: new Date() },
+    update: {
+      isActive: true,
+      emailVerifiedAt: new Date(),
+      passwordHash: adminPasswordHash,
+      globalRole: GlobalRole.SUPER_ADMIN,
+      fullName: "SR Super Admin",
+    },
     create: {
       userCode: await allocateUserCode(prisma),
       email: adminEmail,
       fullName: "SR Super Admin",
       globalRole: GlobalRole.SUPER_ADMIN,
-      passwordHash: await bcrypt.hash(process.env.SUPER_ADMIN_PASSWORD ?? "ChangeMeAdmin!123", 10),
+      passwordHash: adminPasswordHash,
       isActive: true,
       emailVerifiedAt: new Date(),
     },
@@ -270,7 +302,12 @@ async function main() {
   if (demoCompany) {
     await prisma.company.delete({ where: { id: demoCompany.id } });
   }
-  for (const email of ["agency@srsocialhub.local", "client@srsocialhub.local"]) {
+  for (const email of [
+    "agency@srsocialhub.local",
+    "client@srsocialhub.local",
+    "agency@srsocialhub.in",
+    "client@srsocialhub.in",
+  ]) {
     const user = await prisma.user.findUnique({ where: { email } });
     if (user && user.globalRole !== GlobalRole.SUPER_ADMIN) {
       await prisma.user.delete({ where: { id: user.id } });

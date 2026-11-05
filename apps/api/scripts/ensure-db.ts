@@ -60,11 +60,11 @@ JWT_ACCESS_TTL=7d
 JWT_REFRESH_TTL=30d
 ENCRYPTION_KEY=0123456789abcdef0123456789abcdef
 COOKIE_SECURE=false
-SUPER_ADMIN_EMAIL=admin@srsocialhub.local
+SUPER_ADMIN_EMAIL=support@srsocialhub.in
 SUPER_ADMIN_PASSWORD=ChangeMeAdmin!123
-DEMO_COMPANY_EMAIL=agency@srsocialhub.local
+DEMO_COMPANY_EMAIL=agency@srsocialhub.in
 DEMO_COMPANY_PASSWORD=ChangeMeAgency!123
-DEMO_CLIENT_EMAIL=client@srsocialhub.local
+DEMO_CLIENT_EMAIL=client@srsocialhub.in
 DEMO_CLIENT_PASSWORD=ChangeMeClient!123
 REDIS_URL=redis://localhost:6379
 `;

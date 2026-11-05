@@ -91,8 +91,8 @@ export default function PrivacyPage() {
       <h2>8. Contact</h2>
       <p>
         Privacy questions:{" "}
-        <a className="text-brand-secondary underline" href="mailto:privacy@srsocialhub.local">
-          privacy@srsocialhub.local
+        <a className="text-brand-secondary underline" href="mailto:support@srsocialhub.in">
+          support@srsocialhub.in
         </a>
         . Support:{" "}
         <a className="text-brand-secondary underline" href="/support">
