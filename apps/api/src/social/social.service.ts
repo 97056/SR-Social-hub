@@ -158,14 +158,39 @@ export class SocialService {
     };
   }
 
+  /** Client portal users are ClientMembers, not CompanyMembers — resolve company from client. */
+  async startConnectForClient(input: {
+    clientId: string;
+    platformCode: SocialPlatformCode;
+    user: AuthUser;
+    redirectTo?: string;
+  }) {
+    const client = await this.prisma.client.findFirst({
+      where: { id: input.clientId, isArchived: false },
+    });
+    if (!client) throw new NotFoundException("Client not found");
+    await this.assertClientPortalAccess(client.id, client.companyId, input.user);
+    return this.startConnect({
+      companyId: client.companyId,
+      clientId: client.id,
+      platformCode: input.platformCode,
+      user: input.user,
+      redirectTo: input.redirectTo,
+      skipCompanyManageCheck: true,
+    });
+  }
+
   async startConnect(input: {
     companyId: string;
     clientId: string;
     platformCode: SocialPlatformCode;
     user: AuthUser;
     redirectTo?: string;
+    skipCompanyManageCheck?: boolean;
   }) {
-    await this.assertCanManage(input.companyId, input.user);
+    if (!input.skipCompanyManageCheck) {
+      await this.assertCanManage(input.companyId, input.user);
+    }
     await this.assertClientInCompany(input.companyId, input.clientId);
 
     if (input.platformCode === "TIKTOK") {
@@ -297,6 +322,7 @@ export class SocialService {
       clientSecret: secret,
       mode,
       apiVersion: platform.appConfig?.apiVersion,
+      codeVerifier: oauthState.platformCode === "X" ? "challenge" : null,
     });
 
     const account = await this.prisma.socialAccount.upsert({
@@ -395,6 +421,17 @@ export class SocialService {
     return { redirectTo: redirect.toString(), accountId: account.id, mode: exchanged.mode };
   }
 
+  async buildOAuthErrorRedirect(state: string, message: string): Promise<string | null> {
+    const oauthState = await this.prisma.oAuthState.findUnique({ where: { state } });
+    if (!oauthState) return null;
+    const redirect = new URL(
+      oauthState.redirectTo ||
+        `${process.env.WEB_URL ?? "http://localhost:3000"}/client/${oauthState.clientId}/social-accounts`,
+    );
+    redirect.searchParams.set("oauth_error", message.slice(0, 180));
+    return redirect.toString();
+  }
+
   async disconnect(accountId: string, user: AuthUser) {
     const account = await this.prisma.socialAccount.findUnique({
       where: { id: accountId },
@@ -404,7 +441,7 @@ export class SocialService {
       },
     });
     if (!account) throw new NotFoundException("Social account not found");
-    await this.assertCanManage(account.companyId, user);
+    await this.assertCanManageOrClient(account.companyId, account.clientId, user);
 
     const adapter = this.getAdapter(account.platformCode);
     if (account.token && adapter.revoke) {
@@ -459,5 +496,35 @@ export class SocialService {
     if (!membership || membership.status !== "ACTIVE") {
       throw new ForbiddenException("No access to this company");
     }
+  }
+
+  private async assertCanManageOrClient(
+    companyId: string,
+    clientId: string,
+    user: AuthUser,
+  ) {
+    if (user.globalRole === "SUPER_ADMIN") return;
+    const companyMembership = await this.prisma.companyMember.findUnique({
+      where: { companyId_userId: { companyId, userId: user.id } },
+    });
+    if (companyMembership?.status === "ACTIVE") return;
+    await this.assertClientPortalAccess(clientId, companyId, user);
+  }
+
+  private async assertClientPortalAccess(
+    clientId: string,
+    companyId: string,
+    user: AuthUser,
+  ) {
+    if (user.globalRole === "SUPER_ADMIN") return;
+    const clientMembership = await this.prisma.clientMember.findUnique({
+      where: { clientId_userId: { clientId, userId: user.id } },
+    });
+    if (clientMembership?.status === "ACTIVE") return;
+    const companyMembership = await this.prisma.companyMember.findUnique({
+      where: { companyId_userId: { companyId, userId: user.id } },
+    });
+    if (companyMembership?.status === "ACTIVE") return;
+    throw new ForbiddenException("No access to this client workspace");
   }
 }

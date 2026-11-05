@@ -65,6 +65,7 @@ export class CatalogSocialAdapter implements SocialAdapter {
     clientSecret: string;
     mode: AdapterAuthMode;
     apiVersion?: string | null;
+    codeVerifier?: string | null;
   }): Promise<TokenExchangeResult> {
     const mockCode = `mock_${this.entry.mockPrefix}_`;
     if (input.mode === "mock" || input.code.startsWith(mockCode)) {
@@ -98,10 +99,25 @@ export class CatalogSocialAdapter implements SocialAdapter {
       code: input.code,
       grant_type: "authorization_code",
     });
+    // X OAuth 2.0 authorize uses code_challenge_method=plain with fixed "challenge".
+    const verifier =
+      input.codeVerifier ||
+      (this.entry.code === "X" ? "challenge" : null);
+    if (verifier) body.set("code_verifier", verifier);
+
+    const headers: Record<string, string> = {
+      "Content-Type": "application/x-www-form-urlencoded",
+    };
+    // X requires HTTP Basic client authentication for confidential clients.
+    if (this.entry.code === "X") {
+      headers.Authorization = `Basic ${Buffer.from(
+        `${input.clientId}:${input.clientSecret}`,
+      ).toString("base64")}`;
+    }
 
     const res = await fetch(this.entry.liveTokenUrl, {
       method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      headers,
       body,
     });
     if (!res.ok) {

@@ -24,3 +24,9 @@ Also register in Meta:
 - Data deletion: https://srsocialhub.in/delete-account
 
 API JSON mirror (when API is up): `GET https://api.srsocialhub.in/api/v1/public/integration-urls`
+
+## Provider setup (Instagram + YouTube first)
+
+Step-by-step console checklist (Meta Live mode + Google redirect URI):
+
+→ [oauth-instagram-youtube.md](./oauth-instagram-youtube.md)

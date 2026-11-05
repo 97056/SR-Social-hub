@@ -68,6 +68,7 @@ export class FacebookAdapter implements SocialAdapter {
     clientSecret: string;
     mode: AdapterAuthMode;
     apiVersion?: string | null;
+    codeVerifier?: string | null;
   }): Promise<TokenExchangeResult> {
     if (input.mode === "mock" || input.code.startsWith("mock_fb_")) {
       const suffix = createHash("sha256").update(input.code).digest("hex").slice(0, 8);

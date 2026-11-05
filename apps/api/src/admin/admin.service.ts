@@ -256,6 +256,21 @@ export class AdminService {
           where: { isArchived: false },
           orderBy: { name: "asc" },
           include: {
+            members: {
+              where: { status: "ACTIVE" },
+              take: 5,
+              include: {
+                user: {
+                  select: {
+                    fullName: true,
+                    email: true,
+                    phone: true,
+                    isActive: true,
+                    lastLoginAt: true,
+                  },
+                },
+              },
+            },
             socialAccounts: {
               select: {
                 id: true,
@@ -267,7 +282,7 @@ export class AdminService {
               },
               orderBy: { platformCode: "asc" },
             },
-            _count: { select: { posts: true, members: true } },
+            _count: { select: { posts: true, members: true, socialAccounts: true } },
           },
         },
         socialAccounts: {

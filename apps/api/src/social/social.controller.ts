@@ -38,6 +38,24 @@ export class SocialController {
     return this.social.listForClientId(clientId);
   }
 
+  /** Client-portal connect (client members are not company members). */
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, ClientAccessGuard)
+  @Post("clients/:clientId/social-accounts/:platform/connect")
+  startConnectAsClient(
+    @Param("clientId") clientId: string,
+    @Param("platform") platform: SocialPlatformCode,
+    @CurrentUser() user: AuthUser,
+    @Body() dto: StartConnectDto,
+  ) {
+    return this.social.startConnectForClient({
+      clientId,
+      platformCode: platform,
+      user,
+      redirectTo: dto.redirectTo,
+    });
+  }
+
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, CompanyAccessGuard)
   @Post("companies/:companyId/clients/:clientId/social-accounts/:platform/connect")
@@ -86,11 +104,36 @@ export class SocialController {
   /** OAuth callback — no JWT; validated via signed/random state row. */
   @Get("oauth/callback")
   async callback(
-    @Query("code") code: string,
-    @Query("state") state: string,
+    @Query("code") code: string | undefined,
+    @Query("state") state: string | undefined,
+    @Query("error") oauthError: string | undefined,
+    @Query("error_description") oauthErrorDescription: string | undefined,
     @Res() res: Response,
   ) {
-    const result = await this.social.handleCallback(code, state);
-    return res.redirect(result.redirectTo);
+    try {
+      if (oauthError) {
+        throw new Error(oauthErrorDescription || oauthError);
+      }
+      if (!code || !state) {
+        throw new Error("OAuth callback missing code or state");
+      }
+      const result = await this.social.handleCallback(code, state);
+      return res.redirect(result.redirectTo);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "OAuth failed";
+      const fallback = `${process.env.WEB_URL ?? "https://srsocialhub.in"}/support`;
+      const target = new URL(fallback);
+      // Prefer client redirect when state still resolves.
+      try {
+        if (state) {
+          const recovered = await this.social.buildOAuthErrorRedirect(state, message);
+          if (recovered) return res.redirect(recovered);
+        }
+      } catch {
+        /* fall through */
+      }
+      target.searchParams.set("oauth_error", message.slice(0, 180));
+      return res.redirect(target.toString());
+    }
   }
 }

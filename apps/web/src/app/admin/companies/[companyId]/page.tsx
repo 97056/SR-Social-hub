@@ -1,12 +1,46 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { AppShell, StatCard } from "@/components/shell";
 import { toast } from "@/components/toast";
 import { apiFetch, getToken } from "@/lib/api";
 import { adminNav } from "@/lib/nav";
+
+type SocialRow = {
+  id?: string;
+  platformCode: string;
+  accountName: string | null;
+  username: string | null;
+  status: string;
+  clientId?: string;
+};
+
+type ClientRow = {
+  id: string;
+  name: string;
+  industry: string | null;
+  website: string | null;
+  contactEmail: string | null;
+  contactPhone: string | null;
+  businessName: string | null;
+  brandVoice: string | null;
+  timezone: string;
+  externalCode: string | null;
+  createdAt: string;
+  members: Array<{
+    user: {
+      fullName: string;
+      email: string;
+      phone: string | null;
+      isActive: boolean;
+      lastLoginAt: string | null;
+    };
+  }>;
+  socialAccounts: SocialRow[];
+  _count: { posts: number; members: number; socialAccounts: number };
+};
 
 type Detail = {
   id: string;
@@ -54,29 +88,8 @@ type Detail = {
     status: string;
     user: { email: string; fullName: string; isActive: boolean };
   }>;
-  clients: Array<{
-    id: string;
-    name: string;
-    industry: string | null;
-    website: string | null;
-    contactEmail: string | null;
-    contactPhone: string | null;
-    businessName: string | null;
-    socialAccounts: Array<{
-      platformCode: string;
-      accountName: string | null;
-      username: string | null;
-      status: string;
-    }>;
-    _count: { posts: number; members: number };
-  }>;
-  socialAccounts: Array<{
-    platformCode: string;
-    accountName: string | null;
-    username: string | null;
-    status: string;
-    clientId: string;
-  }>;
+  clients: ClientRow[];
+  socialAccounts: SocialRow[];
   _count: { clients: number; members: number; socialAccounts: number; posts: number };
 };
 
@@ -87,6 +100,8 @@ export default function AdminCompanyDetailPage() {
   const [data, setData] = useState<Detail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [clientQuery, setClientQuery] = useState("");
+  const [view, setView] = useState<"table" | "cards">("table");
 
   async function load() {
     const detail = await apiFetch<Detail>(`/admin/companies/${companyId}`);
@@ -100,6 +115,36 @@ export default function AdminCompanyDetailPage() {
     }
     load().catch((e: Error) => setError(e.message));
   }, [companyId, router]);
+
+  const ownerReady = Boolean(data?.owner?.isActive && data?.owner?.emailVerifiedAt);
+
+  const filteredClients = useMemo(() => {
+    const list = data?.clients ?? [];
+    const q = clientQuery.trim().toLowerCase();
+    if (!q) return list;
+    return list.filter((c) => {
+      const contact = c.members.map((m) => `${m.user.fullName} ${m.user.email}`).join(" ");
+      const socials = c.socialAccounts
+        .map((s) => `${s.platformCode} ${s.accountName ?? ""} ${s.username ?? ""}`)
+        .join(" ");
+      const hay = [
+        c.name,
+        c.businessName,
+        c.industry,
+        c.website,
+        c.contactEmail,
+        c.contactPhone,
+        c.brandVoice,
+        c.externalCode,
+        contact,
+        socials,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      return hay.includes(q);
+    });
+  }, [data?.clients, clientQuery]);
 
   async function activateOwner() {
     setBusy(true);
@@ -233,9 +278,7 @@ export default function AdminCompanyDetailPage() {
                 </div>
                 <div>
                   <dt className="text-content-muted">Login ready</dt>
-                  <dd>
-                    {data.owner.isActive && data.owner.emailVerifiedAt ? "Yes" : "No — needs activation"}
-                  </dd>
+                  <dd>{ownerReady ? "Yes" : "No — needs activation"}</dd>
                 </div>
                 <div>
                   <dt className="text-content-muted">Last login</dt>
@@ -246,22 +289,26 @@ export default function AdminCompanyDetailPage() {
                   </dd>
                 </div>
               </dl>
-              <div className="flex flex-wrap gap-2 pt-2">
-                <button
-                  disabled={busy || (data.owner.isActive && !!data.owner.emailVerifiedAt)}
-                  onClick={activateOwner}
-                  className="rounded-xl bg-brand-primary px-4 py-2 text-xs font-semibold text-[#050814] disabled:opacity-50"
-                >
-                  Activate owner login
-                </button>
-                <button
-                  disabled={busy}
-                  onClick={resendActivation}
-                  className="rounded-xl border border-white/15 px-4 py-2 text-xs font-semibold text-white"
-                >
-                  Resend activation email
-                </button>
-              </div>
+              {!ownerReady ? (
+                <div className="flex flex-wrap gap-2 pt-2">
+                  <button
+                    disabled={busy}
+                    onClick={activateOwner}
+                    className="rounded-xl bg-brand-primary px-4 py-2 text-xs font-semibold text-[#050814] disabled:opacity-50"
+                  >
+                    Activate owner login
+                  </button>
+                  <button
+                    disabled={busy}
+                    onClick={resendActivation}
+                    className="rounded-xl border border-white/15 px-4 py-2 text-xs font-semibold text-white"
+                  >
+                    Resend activation email
+                  </button>
+                </div>
+              ) : (
+                <p className="pt-2 text-xs text-brand-success">Owner login is already active.</p>
+              )}
             </>
           ) : (
             <p className="text-sm text-content-muted">No owner membership found.</p>
@@ -269,51 +316,166 @@ export default function AdminCompanyDetailPage() {
         </section>
       </div>
 
-      <section className="panel mt-4 overflow-x-auto p-5">
-        <h2 className="mb-3 font-display text-lg font-semibold">Clients</h2>
-        {data?.clients?.length ? (
-          <table className="w-full min-w-[720px] text-left text-sm">
-            <thead className="border-b border-white/10 text-content-muted">
-              <tr>
-                <th className="px-3 py-2 font-medium">Client</th>
-                <th className="px-3 py-2 font-medium">Contact</th>
-                <th className="px-3 py-2 font-medium">Socials</th>
-                <th className="px-3 py-2 font-medium">Posts</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.clients.map((c) => (
-                <tr key={c.id} className="border-b border-white/5 align-top">
-                  <td className="px-3 py-3">
-                    <p className="font-medium">{c.name}</p>
-                    <p className="text-xs text-content-muted">
-                      {c.businessName || c.industry || "—"}
+      <section className="panel mt-4 p-5">
+        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h2 className="font-display text-lg font-semibold">Clients</h2>
+            <p className="text-xs text-content-muted">
+              Showing {filteredClients.length} of {data?.clients?.length ?? 0} · fields from invite form
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              value={clientQuery}
+              onChange={(e) => setClientQuery(e.target.value)}
+              placeholder="Search clients, contact, social…"
+              className="min-w-[220px] flex-1 rounded-xl border border-white/10 bg-ink-elevated px-3 py-2 text-sm outline-none focus:border-brand-primary"
+            />
+            <div className="flex rounded-xl border border-white/10 p-0.5 text-xs">
+              <button
+                type="button"
+                onClick={() => setView("table")}
+                className={`rounded-lg px-3 py-1.5 ${view === "table" ? "bg-white/10" : "text-content-muted"}`}
+              >
+                List
+              </button>
+              <button
+                type="button"
+                onClick={() => setView("cards")}
+                className={`rounded-lg px-3 py-1.5 ${view === "cards" ? "bg-white/10" : "text-content-muted"}`}
+              >
+                Grid
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {!filteredClients.length ? (
+          <p className="text-sm text-content-muted">
+            {data?.clients?.length ? "No clients match this search." : "No clients added yet."}
+          </p>
+        ) : view === "table" ? (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[980px] text-left text-sm">
+              <thead className="border-b border-white/10 text-content-muted">
+                <tr>
+                  <th className="px-3 py-2 font-medium">Organization</th>
+                  <th className="px-3 py-2 font-medium">Contact</th>
+                  <th className="px-3 py-2 font-medium">Business / web</th>
+                  <th className="px-3 py-2 font-medium">Description</th>
+                  <th className="px-3 py-2 font-medium">Socials</th>
+                  <th className="px-3 py-2 font-medium">Posts</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredClients.map((c) => {
+                  const primary = c.members[0]?.user;
+                  const connected = c.socialAccounts.filter((s) => s.status !== "DISCONNECTED");
+                  return (
+                    <tr key={c.id} className="border-b border-white/5 align-top">
+                      <td className="px-3 py-3">
+                        <p className="font-medium">{c.name}</p>
+                        <p className="text-xs text-content-muted">
+                          {c.industry || "—"} · {c.timezone}
+                        </p>
+                        {c.externalCode ? (
+                          <p className="font-mono text-[11px] text-content-muted">{c.externalCode}</p>
+                        ) : null}
+                      </td>
+                      <td className="px-3 py-3 text-xs">
+                        <p className="font-medium text-white">{primary?.fullName || "—"}</p>
+                        <p>{c.contactEmail || primary?.email || "—"}</p>
+                        <p className="text-content-muted">
+                          {c.contactPhone || primary?.phone || "—"}
+                        </p>
+                      </td>
+                      <td className="px-3 py-3 text-xs">
+                        <p>{c.businessName || "—"}</p>
+                        <p className="truncate text-content-muted">{c.website || "—"}</p>
+                      </td>
+                      <td className="max-w-[220px] px-3 py-3 text-xs text-content-muted">
+                        <p className="line-clamp-3">{c.brandVoice || "—"}</p>
+                      </td>
+                      <td className="px-3 py-3">
+                        <p className="mb-1 text-xs font-semibold">{connected.length} connected</p>
+                        {connected.length ? (
+                          <ul className="space-y-1 text-xs">
+                            {connected.map((s) => (
+                              <li key={s.id ?? `${c.id}-${s.platformCode}-${s.username}`}>
+                                {s.platformCode} · {s.accountName || s.username || "—"} · {s.status}
+                              </li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <span className="text-xs text-content-muted">None</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-3">{c._count.posts}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {filteredClients.map((c) => {
+              const primary = c.members[0]?.user;
+              const connected = c.socialAccounts.filter((s) => s.status !== "DISCONNECTED");
+              return (
+                <article key={c.id} className="rounded-2xl border border-white/10 bg-ink-elevated p-4">
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <h3 className="font-display font-semibold">{c.name}</h3>
+                      <p className="text-xs text-content-muted">{c.industry || "No industry"}</p>
+                    </div>
+                    <span className="rounded-lg bg-brand-primary/15 px-2 py-1 text-[11px] text-brand-primary">
+                      {connected.length} socials
+                    </span>
+                  </div>
+                  <dl className="mt-3 space-y-1.5 text-xs">
+                    <div>
+                      <dt className="text-content-muted">Contact</dt>
+                      <dd>
+                        {primary?.fullName || "—"} · {c.contactEmail || primary?.email || "—"}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-content-muted">Phone</dt>
+                      <dd>{c.contactPhone || primary?.phone || "—"}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-content-muted">Business / website</dt>
+                      <dd>
+                        {c.businessName || "—"}
+                        {c.website ? ` · ${c.website}` : ""}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-content-muted">Description</dt>
+                      <dd className="line-clamp-4 text-content-muted">{c.brandVoice || "—"}</dd>
+                    </div>
+                  </dl>
+                  <div className="mt-3 border-t border-white/10 pt-3">
+                    <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-content-muted">
+                      Connected
                     </p>
-                  </td>
-                  <td className="px-3 py-3 text-xs">
-                    <p>{c.contactEmail || "—"}</p>
-                    <p className="text-content-muted">{c.contactPhone || c.website || ""}</p>
-                  </td>
-                  <td className="px-3 py-3">
-                    {c.socialAccounts.length ? (
+                    {connected.length ? (
                       <ul className="space-y-1 text-xs">
-                        {c.socialAccounts.map((s) => (
-                          <li key={`${c.id}-${s.platformCode}-${s.username ?? s.accountName}`}>
-                            {s.platformCode} · {s.accountName || s.username || "—"} · {s.status}
+                        {connected.map((s) => (
+                          <li key={s.id ?? `${c.id}-${s.platformCode}-${s.username}`}>
+                            {s.platformCode} · {s.accountName || s.username || "—"}
                           </li>
                         ))}
                       </ul>
                     ) : (
-                      <span className="text-xs text-content-muted">None</span>
+                      <p className="text-xs text-content-muted">No social accounts yet.</p>
                     )}
-                  </td>
-                  <td className="px-3 py-3">{c._count.posts}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        ) : (
-          <p className="text-sm text-content-muted">No clients added yet.</p>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
         )}
       </section>
 
@@ -321,14 +483,20 @@ export default function AdminCompanyDetailPage() {
         <h2 className="mb-3 font-display text-lg font-semibold">All social connections</h2>
         {data?.socialAccounts?.length ? (
           <ul className="space-y-2 text-sm">
-            {data.socialAccounts.map((s) => (
-              <li
-                key={`${s.clientId}-${s.platformCode}-${s.username ?? s.accountName}`}
-                className="rounded-xl border border-white/10 px-3 py-2"
-              >
-                <strong>{s.platformCode}</strong> · {s.accountName || s.username || "—"} · {s.status}
-              </li>
-            ))}
+            {data.socialAccounts.map((s) => {
+              const clientName = data.clients.find((c) => c.id === s.clientId)?.name;
+              return (
+                <li
+                  key={s.id ?? `${s.clientId}-${s.platformCode}-${s.username ?? s.accountName}`}
+                  className="rounded-xl border border-white/10 px-3 py-2"
+                >
+                  <strong>{s.platformCode}</strong> · {s.accountName || s.username || "—"} · {s.status}
+                  {clientName ? (
+                    <span className="text-content-muted"> · {clientName}</span>
+                  ) : null}
+                </li>
+              );
+            })}
           </ul>
         ) : (
           <p className="text-sm text-content-muted">No social accounts connected.</p>

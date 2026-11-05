@@ -32,36 +32,27 @@ type PlatformCard = {
   }>;
 };
 
-type Workspace = { client: { companyId: string; name: string } };
-
 function SocialAccountsInner() {
   const params = useParams<{ clientId: string }>();
   const search = useSearchParams();
   const router = useRouter();
   const clientId = params.clientId;
-  const [companyId, setCompanyId] = useState<string | null>(null);
   const [items, setItems] = useState<PlatformCard[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
 
   async function load() {
-    const [workspace, list] = await Promise.all([
-      apiFetch<Workspace>(`/clients/${clientId}/workspace`),
-      apiFetch<PlatformCard[]>(`/clients/${clientId}/social-accounts`),
-    ]);
-    setCompanyId(workspace.client.companyId);
+    const list = await apiFetch<PlatformCard[]>(`/clients/${clientId}/social-accounts`);
     setItems(list);
   }
 
-  async function connect(platform: string, cid?: string) {
-    const company = cid ?? companyId;
-    if (!company) return;
+  async function connect(platform: string) {
     setBusy(platform);
     setError(null);
     try {
       const res = await apiFetch<{ authorizeUrl: string; note: string }>(
-        `/companies/${company}/clients/${clientId}/social-accounts/${platform}/connect`,
+        `/clients/${clientId}/social-accounts/${platform}/connect`,
         {
           method: "POST",
           body: JSON.stringify({
@@ -84,7 +75,10 @@ function SocialAccountsInner() {
     }
     const connected = search.get("connected");
     const mode = search.get("mode");
-    if (connected) {
+    const oauthError = search.get("oauth_error");
+    if (oauthError) {
+      setError(oauthError);
+    } else if (connected) {
       setNotice(
         mode === "mock"
           ? `${connected} connected (test connection).`
@@ -93,15 +87,11 @@ function SocialAccountsInner() {
     }
     (async () => {
       try {
-        const [workspace, list] = await Promise.all([
-          apiFetch<Workspace>(`/clients/${clientId}/workspace`),
-          apiFetch<PlatformCard[]>(`/clients/${clientId}/social-accounts`),
-        ]);
-        setCompanyId(workspace.client.companyId);
+        const list = await apiFetch<PlatformCard[]>(`/clients/${clientId}/social-accounts`);
         setItems(list);
         const auto = search.get("connect")?.toUpperCase();
-        if (auto && !search.get("connected")) {
-          await connect(auto, workspace.client.companyId);
+        if (auto && !search.get("connected") && !oauthError) {
+          await connect(auto);
         }
       } catch (e) {
         setError(e instanceof Error ? e.message : "Failed to load");

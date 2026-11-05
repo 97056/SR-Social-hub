@@ -48,6 +48,8 @@ export interface SocialAdapter {
     clientSecret: string;
     mode: AdapterAuthMode;
     apiVersion?: string | null;
+    /** PKCE verifier (required for X / Twitter OAuth 2.0). */
+    codeVerifier?: string | null;
   }): Promise<TokenExchangeResult>;
   revoke?(input: {
     accessToken: string;
