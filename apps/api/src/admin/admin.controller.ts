@@ -39,6 +39,11 @@ export class AdminController {
     return this.admin.listCompanies();
   }
 
+  @Get("companies/:companyId")
+  companyDetail(@Param("companyId") companyId: string) {
+    return this.admin.getCompanyDetail(companyId);
+  }
+
   @Post("companies")
   createCompany(@CurrentUser() user: AuthUser, @Body() dto: CreateCompanyDto) {
     return this.admin.createCompany(user, dto);
@@ -51,6 +56,11 @@ export class AdminController {
     @Body() dto: UpdateCompanyDto,
   ) {
     return this.admin.updateCompany(user, companyId, dto);
+  }
+
+  @Post("companies/:companyId/activate-owner")
+  activateOwner(@CurrentUser() user: AuthUser, @Param("companyId") companyId: string) {
+    return this.admin.activateCompanyOwner(user, companyId);
   }
 
   @Get("integrations")

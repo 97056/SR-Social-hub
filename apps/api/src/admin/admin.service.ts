@@ -197,10 +197,156 @@ export class AdminService {
     return this.prisma.company.findMany({
       orderBy: { createdAt: "desc" },
       include: {
-        plan: { select: { code: true, name: true, monthlyPriceInr: true } },
-        _count: { select: { clients: true, members: true } },
+        plan: {
+          select: { code: true, name: true, monthlyPriceInr: true, clientQuota: true, accountQuota: true },
+        },
+        subscriptions: {
+          orderBy: { createdAt: "desc" },
+          take: 1,
+          select: { status: true, trialEndsAt: true, currentPeriodEnd: true, interval: true },
+        },
+        members: {
+          where: { role: "OWNER" },
+          take: 1,
+          include: {
+            user: {
+              select: {
+                id: true,
+                email: true,
+                fullName: true,
+                phone: true,
+                accountKind: true,
+                isActive: true,
+                emailVerifiedAt: true,
+              },
+            },
+          },
+        },
+        _count: { select: { clients: true, members: true, socialAccounts: true } },
       },
     });
+  }
+
+  async getCompanyDetail(companyId: string) {
+    const company = await this.prisma.company.findUnique({
+      where: { id: companyId },
+      include: {
+        plan: true,
+        subscriptions: { orderBy: { createdAt: "desc" }, take: 3 },
+        members: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                email: true,
+                fullName: true,
+                phone: true,
+                accountKind: true,
+                isActive: true,
+                emailVerifiedAt: true,
+                lastLoginAt: true,
+                userCode: true,
+                createdAt: true,
+              },
+            },
+          },
+          orderBy: { createdAt: "asc" },
+        },
+        clients: {
+          where: { isArchived: false },
+          orderBy: { name: "asc" },
+          include: {
+            socialAccounts: {
+              select: {
+                id: true,
+                platformCode: true,
+                accountName: true,
+                username: true,
+                status: true,
+                createdAt: true,
+              },
+              orderBy: { platformCode: "asc" },
+            },
+            _count: { select: { posts: true, members: true } },
+          },
+        },
+        socialAccounts: {
+          select: {
+            id: true,
+            platformCode: true,
+            accountName: true,
+            username: true,
+            status: true,
+            clientId: true,
+            createdAt: true,
+          },
+          orderBy: { createdAt: "desc" },
+        },
+        _count: {
+          select: { clients: true, members: true, socialAccounts: true, posts: true },
+        },
+      },
+    });
+    if (!company) throw new NotFoundException("Company not found");
+
+    const owner = company.members.find((m) => m.role === "OWNER")?.user ?? null;
+    const subscription = company.subscriptions[0] ?? null;
+    const isTrial =
+      company.status === "TRIAL" ||
+      subscription?.status === "TRIALING";
+
+    return {
+      ...company,
+      owner,
+      subscription,
+      isTrial,
+      accessLabel: isTrial ? "Free trial" : company.status,
+      planLabel: isTrial
+        ? `Free trial · ${company.plan?.name ?? "Starter"} catalog`
+        : company.plan?.name ?? "No plan",
+    };
+  }
+
+  async activateCompanyOwner(actor: AuthUser, companyId: string) {
+    const company = await this.prisma.company.findUnique({
+      where: { id: companyId },
+      include: {
+        members: { where: { role: "OWNER" }, include: { user: true }, take: 1 },
+      },
+    });
+    if (!company) throw new NotFoundException("Company not found");
+    const owner = company.members[0]?.user;
+    if (!owner) throw new NotFoundException("Company owner not found");
+
+    const updated = await this.prisma.user.update({
+      where: { id: owner.id },
+      data: { isActive: true, emailVerifiedAt: new Date() },
+    });
+
+    // Registrations should remain on trial until paid conversion.
+    if (company.status === "ACTIVE" && company.trialEndsAt && company.trialEndsAt > new Date()) {
+      await this.prisma.company.update({
+        where: { id: companyId },
+        data: { status: "TRIAL" },
+      });
+    }
+
+    await this.prisma.auditLog.create({
+      data: {
+        actorId: actor.id,
+        companyId,
+        action: "ADMIN_OWNER_ACTIVATED",
+        entityType: "User",
+        entityId: owner.id,
+        metadata: { email: owner.email },
+      },
+    });
+
+    return {
+      ok: true,
+      email: updated.email,
+      message: "Owner activated. They can sign in now.",
+    };
   }
 
   async createCompany(actor: AuthUser, dto: CreateCompanyDto) {

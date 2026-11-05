@@ -66,6 +66,11 @@ export class AuthController {
     return this.auth.activateAccount(dto.token);
   }
 
+  @Post("resend-activation")
+  resendActivation(@Body() dto: ForgotPasswordDto) {
+    return this.auth.resendActivation(dto.email);
+  }
+
   @Post("forgot-password")
   forgotPassword(@Body() dto: ForgotPasswordDto) {
     return this.auth.forgotPassword(dto.email);

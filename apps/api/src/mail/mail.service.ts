@@ -113,13 +113,20 @@ export class MailService {
       auth: { user: settings.smtpUser, pass: settings.smtpPass },
     } as SMTPTransport.Options);
 
+    // Gmail (and most SMTP relays) only allow From = authenticated mailbox.
+    // Keep support@ as Reply-To so replies hit the canonical inbox.
+    const smtpIdentity = settings.smtpUser;
+    const supportInbox = settings.fromEmail || "support@srsocialhub.in";
+    const fromAddress = smtpIdentity || supportInbox;
     await transport.sendMail({
-      from: `"${settings.fromName}" <${settings.fromEmail || settings.smtpUser}>`,
+      from: `"${settings.fromName}" <${fromAddress}>`,
+      replyTo: supportInbox,
       to: input.to,
       subject: input.subject,
       html: input.html,
       text: input.text,
     });
+    this.log.log(`Mail sent: ${input.subject} -> ${input.to}`);
     return { ok: true };
   }
 

@@ -334,14 +334,16 @@ export class AuthService {
     const web = this.config.get<string>("WEB_URL") || "http://localhost:3000";
     const activateUrl = `${web}/activate?token=${encodeURIComponent(rawToken)}`;
     const kindLabel = dto.accountKind === "COMPANY" ? "company" : "individual";
-    await this.mail.sendMail({
-      to: email,
-      subject: "Activate your SR Social Hub account",
-      html: this.mail.shellHtml({
-        accent: "activate",
-        title: "Click to light up your workspace",
-        preheader: "One click activates your SR Social Hub trial",
-        bodyHtml: `<p style="margin:0 0 12px">Hi <strong style="color:#fff">${user.fullName}</strong>,</p>
+    let mailSent = false;
+    try {
+      await this.mail.sendMail({
+        to: email,
+        subject: "Activate your SR Social Hub account",
+        html: this.mail.shellHtml({
+          accent: "activate",
+          title: "Click to light up your workspace",
+          preheader: "One click activates your SR Social Hub trial",
+          bodyHtml: `<p style="margin:0 0 12px">Hi <strong style="color:#fff">${user.fullName}</strong>,</p>
 <p style="margin:0 0 12px">Your <strong style="color:#00d2ff">${kindLabel}</strong> workspace <strong style="color:#fff">${companyName}</strong> is ready. Confirm this email to activate the account and start your free trial.</p>
 <ul style="margin:0 0 12px;padding-left:18px;color:#9aa3b8">
   <li>Secure one-time activation link</li>
@@ -349,17 +351,52 @@ export class AuthService {
   <li>No password needed for this step</li>
 </ul>
 <p style="color:#6b7388;font-size:13px;margin:0">If you did not create this account, you can ignore this email.</p>`,
-        ctaLabel: "Activate my account",
-        ctaUrl: activateUrl,
-      }),
-      text: `Hi ${user.fullName},\n\nActivate your SR Social Hub ${kindLabel} workspace "${companyName}":\n${activateUrl}\n\nThis link expires in 48 hours.`,
-    });
+          ctaLabel: "Activate my account",
+          ctaUrl: activateUrl,
+        }),
+        text: `Hi ${user.fullName},\n\nActivate your SR Social Hub ${kindLabel} workspace "${companyName}":\n${activateUrl}\n\nThis link expires in 48 hours.`,
+      });
+      mailSent = true;
+    } catch {
+      // Keep the registration; admin can activate / resend from Companies.
+      mailSent = false;
+    }
 
     return {
       ok: true,
-      message: "Registration successful. Check your email to activate your account.",
+      message: mailSent
+        ? "Registration successful. Check your email to activate your account (and spam folder)."
+        : "Registration saved, but the activation email could not be sent. Contact support@srsocialhub.in or wait for admin activation.",
       email,
+      mailSent,
     };
+  }
+
+  async resendActivation(emailRaw: string) {
+    const email = emailRaw.toLowerCase().trim();
+    const user = await this.prisma.user.findUnique({ where: { email } });
+    if (!user) return { ok: true, message: "If that email exists, an activation link was sent." };
+    if (user.emailVerifiedAt && user.isActive) {
+      return { ok: true, message: "Account is already activated. You can sign in." };
+    }
+    const rawToken = await this.issueAuthToken(user.id, "ACTIVATE", 48);
+    const web = this.config.get<string>("WEB_URL") || "http://localhost:3000";
+    const activateUrl = `${web}/activate?token=${encodeURIComponent(rawToken)}`;
+    await this.mail.sendMail({
+      to: email,
+      subject: "Activate your SR Social Hub account",
+      html: this.mail.shellHtml({
+        accent: "activate",
+        title: "Activate your workspace",
+        preheader: "Your SR Social Hub activation link",
+        bodyHtml: `<p style="margin:0 0 12px">Hi <strong style="color:#fff">${user.fullName}</strong>,</p>
+<p style="margin:0 0 12px">Use the button below to activate your account and continue your free trial.</p>`,
+        ctaLabel: "Activate my account",
+        ctaUrl: activateUrl,
+      }),
+      text: `Hi ${user.fullName},\n\nActivate your account:\n${activateUrl}\n`,
+    });
+    return { ok: true, message: "Activation email sent." };
   }
 
   async activateAccount(token: string) {
