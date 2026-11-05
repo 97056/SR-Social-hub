@@ -1,0 +1,46 @@
+name: sr-social-hub
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: sr
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: sr_social_hub
+    volumes:
+      - sr_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sr -d sr_social_hub"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks: [sr]
+
+  api:
+    container_name: sr-api
+    build:
+      context: ../apps/api
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file: ./.env.production
+    environment:
+      NODE_ENV: production
+      API_PORT: "4000"
+      DATABASE_URL: postgresql://sr:${POSTGRES_PASSWORD}@postgres:5432/sr_social_hub?schema=public
+    depends_on:
+      postgres:
+        condition: service_healthy
+    expose:
+      - "4000"
+    networks: [sr, ab]
+
+volumes:
+  sr_pg_data:
+
+networks:
+  sr:
+    driver: bridge
+  ab:
+    external: true
+    name: annadatha-bazar_ab
