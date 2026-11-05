@@ -92,13 +92,18 @@ export class CatalogSocialAdapter implements SocialAdapter {
       );
     }
 
+    const usesBasicAuth = this.entry.code === "X" || this.entry.code === "PINTEREST";
     const body = new URLSearchParams({
-      client_id: input.clientId,
-      client_secret: input.clientSecret,
       redirect_uri: input.redirectUri,
       code: input.code,
       grant_type: "authorization_code",
     });
+    // Most providers accept client credentials in the form body.
+    // Pinterest + X require HTTP Basic auth and reject credentials in the body.
+    if (!usesBasicAuth) {
+      body.set("client_id", input.clientId);
+      body.set("client_secret", input.clientSecret);
+    }
     // X OAuth 2.0 authorize uses code_challenge_method=plain with fixed "challenge".
     const verifier =
       input.codeVerifier ||
@@ -108,8 +113,7 @@ export class CatalogSocialAdapter implements SocialAdapter {
     const headers: Record<string, string> = {
       "Content-Type": "application/x-www-form-urlencoded",
     };
-    // X requires HTTP Basic client authentication for confidential clients.
-    if (this.entry.code === "X") {
+    if (usesBasicAuth) {
       headers.Authorization = `Basic ${Buffer.from(
         `${input.clientId}:${input.clientSecret}`,
       ).toString("base64")}`;
@@ -120,35 +124,108 @@ export class CatalogSocialAdapter implements SocialAdapter {
       headers,
       body,
     });
+    const rawText = await res.text();
     if (!res.ok) {
-      throw new Error(`${this.displayName} token exchange failed: ${await res.text()}`);
+      throw new Error(
+        `${this.displayName} token exchange failed (${res.status}): ${this.safeOAuthError(rawText)}`,
+      );
     }
-    const json = (await res.json()) as {
+
+    let json: {
       access_token?: string;
       refresh_token?: string;
       token_type?: string;
       expires_in?: number;
-      scope?: string;
+      scope?: string | string[];
     };
+    try {
+      json = JSON.parse(rawText) as typeof json;
+    } catch {
+      throw new Error(`${this.displayName} token exchange returned non-JSON response (${res.status})`);
+    }
     if (!json.access_token) {
       throw new Error(`${this.displayName} token exchange returned no access_token`);
     }
 
+    const scopes = Array.isArray(json.scope)
+      ? json.scope
+      : json.scope
+        ? json.scope.split(/[,\s]+/).filter(Boolean)
+        : this.getDefaultScopes();
+
+    const profile = await this.fetchLiveProfile(json.access_token);
     const suffix = createHash("sha256").update(json.access_token).digest("hex").slice(0, 8);
     return {
       accessToken: json.access_token,
       refreshToken: json.refresh_token ?? null,
       tokenType: json.token_type ?? "bearer",
       expiresAt: json.expires_in ? new Date(Date.now() + json.expires_in * 1000) : null,
-      scopes: json.scope ? json.scope.split(/[,\s]+/) : this.getDefaultScopes(),
-      externalAccountId: `${this.entry.mockPrefix}_live_${suffix}`,
-      accountName: `${this.displayName} Connected Account`,
-      username: `${this.entry.mockPrefix}_live_${suffix}`,
-      pageIdentifier: `${this.entry.mockPrefix}_live_${suffix}`,
+      scopes,
+      externalAccountId: profile.externalAccountId || `${this.entry.mockPrefix}_live_${suffix}`,
+      accountName: profile.accountName || `${this.displayName} Connected Account`,
+      username: profile.username || `${this.entry.mockPrefix}_live_${suffix}`,
+      pageIdentifier: profile.pageIdentifier || profile.externalAccountId || `${this.entry.mockPrefix}_live_${suffix}`,
       capabilities: this.getCapabilities(),
       mode: "live",
-      rawMeta: { provider: this.entry.code, live: true },
+      rawMeta: { provider: this.entry.code, live: true, ...(profile.rawMeta ?? {}) },
     };
+  }
+
+  /** Strip secrets/tokens from provider error payloads before surfacing. */
+  private safeOAuthError(raw: string): string {
+    try {
+      const parsed = JSON.parse(raw) as Record<string, unknown>;
+      const code = parsed.code ?? parsed.error ?? parsed.error_code;
+      const message =
+        parsed.message ??
+        parsed.error_description ??
+        parsed.error_message ??
+        (typeof parsed.error === "string" ? parsed.error : null);
+      return JSON.stringify({
+        code: code ?? null,
+        message: typeof message === "string" ? message.slice(0, 180) : "token exchange rejected",
+      });
+    } catch {
+      return raw.replace(/[A-Za-z0-9_-]{20,}/g, "[redacted]").slice(0, 180);
+    }
+  }
+
+  private async fetchLiveProfile(accessToken: string): Promise<{
+    externalAccountId?: string;
+    accountName?: string | null;
+    username?: string | null;
+    pageIdentifier?: string | null;
+    rawMeta?: Record<string, unknown>;
+  }> {
+    if (this.entry.code !== "PINTEREST") return {};
+    try {
+      const res = await fetch("https://api.pinterest.com/v5/user_account", {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      if (!res.ok) {
+        // Token is valid even if profile lookup fails — connect still succeeds.
+        return {};
+      }
+      const user = (await res.json()) as {
+        id?: string;
+        username?: string;
+        business_name?: string;
+        account_type?: string;
+      };
+      const username = user.username || null;
+      return {
+        externalAccountId: user.id || username || undefined,
+        accountName: user.business_name || username || "Pinterest Account",
+        username,
+        pageIdentifier: user.id || username || null,
+        rawMeta: {
+          accountType: user.account_type ?? null,
+          boardsChecked: false,
+        },
+      };
+    } catch {
+      return {};
+    }
   }
 
   async revoke(input: {
