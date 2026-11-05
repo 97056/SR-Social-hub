@@ -1,11 +1,10 @@
-import {
-  CompanyRole,
-  ClientRole,
+﻿import {
   GlobalRole,
   PrismaClient,
   SocialPlatformCode,
 } from "@prisma/client";
 import * as bcrypt from "bcryptjs";
+import { allocateUserCode } from "../src/common/user-code.util";
 
 const prisma = new PrismaClient();
 
@@ -16,49 +15,108 @@ async function main() {
     { code: "LINKEDIN", name: "LinkedIn" },
     { code: "X", name: "X" },
     { code: "YOUTUBE", name: "YouTube" },
-    { code: "TIKTOK", name: "TikTok" },
     { code: "PINTEREST", name: "Pinterest" },
     { code: "THREADS", name: "Threads" },
-    { code: "GOOGLE_BUSINESS", name: "Google Business Profile" },
   ];
 
   for (const platform of platforms) {
     await prisma.socialPlatform.upsert({
       where: { code: platform.code },
-      update: { name: platform.name },
-      create: { ...platform, enabled: false },
+      update: { name: platform.name, enabled: true },
+      create: { ...platform, enabled: true },
     });
   }
+
+  // Legacy platforms removed from product — keep any DB rows disabled.
+  await prisma.socialPlatform.updateMany({
+    where: { code: "TIKTOK" },
+    data: { enabled: false, name: "TikTok (unavailable)" },
+  });
+  await prisma.socialPlatform.updateMany({
+    where: { code: "GOOGLE_BUSINESS" },
+    data: { enabled: false, name: "Google Business Profile (unavailable)" },
+  });
 
   const plans = [
     {
       code: "STARTER",
-      name: "Starter",
-      monthlyPriceInr: 999,
-      yearlyPriceInr: 9990,
+      name: "Starter · 3 clients",
+      monthlyPriceInr: 499,
+      yearlyPriceInr: 4990,
       clientQuota: 3,
+      accountQuota: 3,
+      teamQuota: 3,
+      aiQuota: 50,
+      storageMb: 1024,
+      isCustom: false,
+      entitlements: {
+        maxSocialNetworks: 3,
+        allNetworks: false,
+        clientApprovals: true,
+        multiPublish: true,
+        analytics: "basic",
+        note: "Any 3 social networks of your choice",
+      },
     },
     {
       code: "GROWTH",
-      name: "Growth",
-      monthlyPriceInr: 1999,
-      yearlyPriceInr: 19990,
+      name: "Growth · 6 clients",
+      monthlyPriceInr: 999,
+      yearlyPriceInr: 9990,
       clientQuota: 6,
+      accountQuota: 50,
+      teamQuota: 8,
+      aiQuota: 200,
+      storageMb: 5120,
+      isCustom: false,
+      entitlements: {
+        maxSocialNetworks: 7,
+        allNetworks: true,
+        clientApprovals: true,
+        multiPublish: true,
+        analytics: "full",
+        note: "All networks + full platform features",
+      },
     },
     {
       code: "AGENCY_PRO",
-      name: "Agency Pro",
-      monthlyPriceInr: 2999,
-      yearlyPriceInr: 29990,
+      name: "Agency Pro · 9 clients",
+      monthlyPriceInr: 1499,
+      yearlyPriceInr: 14990,
       clientQuota: 9,
+      accountQuota: 100,
+      teamQuota: 15,
+      aiQuota: 500,
+      storageMb: 10240,
+      isCustom: false,
+      entitlements: {
+        maxSocialNetworks: 7,
+        allNetworks: true,
+        clientApprovals: true,
+        multiPublish: true,
+        analytics: "full",
+        note: "Everything in Growth with more client seats",
+      },
     },
     {
       code: "ENTERPRISE",
-      name: "Enterprise",
+      name: "Custom · negotiate quota",
       monthlyPriceInr: 0,
       yearlyPriceInr: 0,
       clientQuota: 100,
+      accountQuota: 500,
+      teamQuota: 50,
+      aiQuota: 2000,
+      storageMb: 51200,
       isCustom: true,
+      entitlements: {
+        maxSocialNetworks: 7,
+        allNetworks: true,
+        clientApprovals: true,
+        multiPublish: true,
+        analytics: "full",
+        note: "Custom client + social quotas",
+      },
     },
   ];
 
@@ -72,135 +130,156 @@ async function main() {
 
   await prisma.systemSetting.upsert({
     where: { key: "branding" },
-    update: {},
+    update: {
+      value: {
+        platformName: "SR Social Hub",
+        primaryColor: "#00D2FF",
+        secondaryColor: "#C026FF",
+        logoUrl: "/brand/logo.png",
+        faviconUrl: "/brand/favicon.png",
+        loginHeadline: "All your socials. One command center.",
+        loginSubcopy:
+          "Agency workspaces, client approvals, and multi-network publishing from one neon-bright hub.",
+        supportEmail: "support@srsocialhub.local",
+        themeDefault: "dark",
+      },
+    },
     create: {
       key: "branding",
       value: {
         platformName: "SR Social Hub",
-        primaryColor: "#7565FF",
-        secondaryColor: "#22D3EE",
+        primaryColor: "#00D2FF",
+        secondaryColor: "#C026FF",
+        logoUrl: "/brand/logo.png",
+        faviconUrl: "/brand/favicon.png",
+        loginHeadline: "All your socials. One command center.",
+        loginSubcopy:
+          "Agency workspaces, client approvals, and multi-network publishing from one neon-bright hub.",
+        supportEmail: "support@srsocialhub.local",
         themeDefault: "dark",
       },
     },
   });
 
+  const faqItems = [
+    {
+      id: "faq-trial",
+      question: "What do I get during the 7-day free trial?",
+      answer:
+        "Trial unlocks the full approval -> publish workflow with 1 client profile and up to 2 social connections so you can feel the speed before you subscribe.",
+      published: true,
+      sortOrder: 1,
+    },
+    {
+      id: "faq-starter-socials",
+      question: "How many social networks can I connect on Starter (Rs.499)?",
+      answer:
+        "Starter includes 3 client profiles and any 3 social networks of your choice. Upgrade to Growth (Rs.999) to unlock all seven networks and full platform features.",
+      published: true,
+      sortOrder: 2,
+    },
+    {
+      id: "faq-approvals",
+      question: "How do client approvals work inside the platform?",
+      answer:
+        "Your team submits drafts for review. Clients open a focused portal, leave feedback, and approve — without ever seeing credentials or billing. Approved posts move straight into the publishing queue.",
+      published: true,
+      sortOrder: 3,
+    },
+    {
+      id: "faq-publish",
+      question: "Can I publish one post to multiple networks?",
+      answer:
+        "Yes. Compose once, tailor media per channel, then schedule or publish live across connected networks based on your plan limits.",
+      published: true,
+      sortOrder: 4,
+    },
+    {
+      id: "faq-billing",
+      question: "Who controls plans and quotas?",
+      answer:
+        "Super Admin assigns plans, negotiates custom quota, and manages pricing. Agencies see their entitlements on Billing but cannot change plan pricing themselves.",
+      published: true,
+      sortOrder: 5,
+    },
+    {
+      id: "faq-delete",
+      question: "How do I delete my account or request data removal?",
+      answer:
+        "Use the Delete account page (/delete-account) or email privacy@srsocialhub.local. We’ll process deletion requests according to our Privacy Policy.",
+      published: true,
+      sortOrder: 6,
+    },
+  ];
+
+  await prisma.systemSetting.upsert({
+    where: { key: "faqs" },
+    update: { value: { items: faqItems } },
+    create: { key: "faqs", value: { items: faqItems } },
+  });
+
+  await prisma.systemSetting.upsert({
+    where: { key: "mail" },
+    update: {},
+    create: {
+      key: "mail",
+      value: {
+        provider: "smtp",
+        smtpHost: process.env.SMTP_HOST || "smtp.gmail.com",
+        smtpPort: Number(process.env.SMTP_PORT || 587),
+        smtpSecure: String(process.env.SMTP_SECURE || "false") === "true",
+        smtpUser: process.env.SMTP_USER || "",
+        smtpPass: process.env.SMTP_PASS || "",
+        fromEmail: process.env.SMTP_FROM_EMAIL || process.env.SMTP_USER || "",
+        fromName: process.env.SMTP_FROM_NAME || "SR Social Hub",
+        sendgridApiKey: "",
+        twilioAccountSid: "",
+        twilioAuthToken: "",
+        twilioFromNumber: "",
+      },
+    },
+  });
+
   const adminEmail = (process.env.SUPER_ADMIN_EMAIL ?? "admin@srsocialhub.local").toLowerCase();
-  const agencyEmail = (process.env.DEMO_COMPANY_EMAIL ?? "agency@srsocialhub.local").toLowerCase();
-  const clientEmail = (process.env.DEMO_CLIENT_EMAIL ?? "client@srsocialhub.local").toLowerCase();
 
   const admin = await prisma.user.upsert({
     where: { email: adminEmail },
-    update: {},
+    update: { isActive: true, emailVerifiedAt: new Date() },
     create: {
+      userCode: await allocateUserCode(prisma),
       email: adminEmail,
       fullName: "SR Super Admin",
       globalRole: GlobalRole.SUPER_ADMIN,
       passwordHash: await bcrypt.hash(process.env.SUPER_ADMIN_PASSWORD ?? "ChangeMeAdmin!123", 10),
+      isActive: true,
+      emailVerifiedAt: new Date(),
     },
   });
 
-  const agencyUser = await prisma.user.upsert({
-    where: { email: agencyEmail },
-    update: {},
-    create: {
-      email: agencyEmail,
-      fullName: "Asha Agency Owner",
-      globalRole: GlobalRole.USER,
-      passwordHash: await bcrypt.hash(process.env.DEMO_COMPANY_PASSWORD ?? "ChangeMeAgency!123", 10),
-    },
-  });
-
-  const clientUser = await prisma.user.upsert({
-    where: { email: clientEmail },
-    update: {},
-    create: {
-      email: clientEmail,
-      fullName: "Rahul Client Approver",
-      globalRole: GlobalRole.USER,
-      passwordHash: await bcrypt.hash(process.env.DEMO_CLIENT_PASSWORD ?? "ChangeMeClient!123", 10),
-    },
-  });
-
-  const growth = await prisma.subscriptionPlan.findUniqueOrThrow({ where: { code: "GROWTH" } });
-
-  const company = await prisma.company.upsert({
-    where: { slug: "demo-agency" },
-    update: {},
-    create: {
-      name: "Demo Agency",
-      slug: "demo-agency",
-      status: "TRIAL",
-      timezone: "Asia/Kolkata",
-      trialEndsAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-      planId: growth.id,
-    },
-  });
-
-  await prisma.companyMember.upsert({
-    where: { companyId_userId: { companyId: company.id, userId: agencyUser.id } },
-    update: { role: CompanyRole.OWNER, status: "ACTIVE" },
-    create: {
-      companyId: company.id,
-      userId: agencyUser.id,
-      role: CompanyRole.OWNER,
-      status: "ACTIVE",
-      acceptedAt: new Date(),
-    },
-  });
-
-  const client = await prisma.client.upsert({
-    where: {
-      companyId_externalCode: { companyId: company.id, externalCode: "CLIENT-001" },
-    },
-    update: {},
-    create: {
-      companyId: company.id,
-      name: "Bright Retail",
-      externalCode: "CLIENT-001",
-      industry: "Retail",
-      timezone: "Asia/Kolkata",
-      contactEmail: clientEmail,
-      brandVoice: "Friendly, concise, conversion-focused",
-    },
-  });
-
-  await prisma.clientMember.upsert({
-    where: { clientId_userId: { clientId: client.id, userId: clientUser.id } },
-    update: { role: ClientRole.APPROVER, status: "ACTIVE" },
-    create: {
-      clientId: client.id,
-      userId: clientUser.id,
-      role: ClientRole.APPROVER,
-      status: "ACTIVE",
-      acceptedAt: new Date(),
-    },
-  });
-
-  const existingSub = await prisma.subscription.findFirst({ where: { companyId: company.id } });
-  if (!existingSub) {
-    const trialEndsAt =
-      company.trialEndsAt ?? new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-    await prisma.subscription.create({
-      data: {
-        companyId: company.id,
-        planId: growth.id,
-        status: "TRIALING",
-        interval: "MONTHLY",
-        currentPeriodStart: new Date(),
-        currentPeriodEnd: trialEndsAt,
-        trialEndsAt,
-        provider: "mock",
-      },
+  // Backfill public User IDs (SRSH-########) for any existing users
+  const missingCodes = await prisma.user.findMany({ where: { userCode: null } });
+  for (const u of missingCodes) {
+    await prisma.user.update({
+      where: { id: u.id },
+      data: { userCode: await allocateUserCode(prisma) },
     });
+  }
+
+  // Remove legacy demo agency / dummy users if present
+  const demoCompany = await prisma.company.findUnique({ where: { slug: "demo-agency" } });
+  if (demoCompany) {
+    await prisma.company.delete({ where: { id: demoCompany.id } });
+  }
+  for (const email of ["agency@srsocialhub.local", "client@srsocialhub.local"]) {
+    const user = await prisma.user.findUnique({ where: { email } });
+    if (user && user.globalRole !== GlobalRole.SUPER_ADMIN) {
+      await prisma.user.delete({ where: { id: user.id } });
+    }
   }
 
   // eslint-disable-next-line no-console
   console.log("Seed complete", {
     admin: admin.email,
-    agency: agencyUser.email,
-    client: clientUser.email,
-    companyId: company.id,
-    clientId: client.id,
   });
 }
 

@@ -8,10 +8,8 @@ const MOCK_PREFIX: Partial<Record<SocialPlatformCode, string>> = {
   LINKEDIN: "li",
   X: "x",
   YOUTUBE: "yt",
-  TIKTOK: "tt",
   PINTEREST: "pin",
   THREADS: "th",
-  GOOGLE_BUSINESS: "gbp",
 };
 
 export function createPublisherRegistry(): Map<SocialPlatformCode, PlatformPublisher> {

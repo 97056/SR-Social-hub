@@ -2,8 +2,8 @@ import { CatalogSocialAdapter } from "./catalog.adapter";
 import { PLATFORM_CATALOG } from "./platform-catalog";
 
 describe("CatalogSocialAdapter", () => {
-  it("covers eight non-Facebook platforms", () => {
-    expect(PLATFORM_CATALOG).toHaveLength(8);
+  it("covers six non-Facebook platforms", () => {
+    expect(PLATFORM_CATALOG).toHaveLength(6);
   });
 
   it.each(PLATFORM_CATALOG.map((e) => [e.code, e]))(

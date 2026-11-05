@@ -12,9 +12,15 @@ export type JwtPayload = {
 
 export type AuthUser = {
   id: string;
+  userCode?: string | null;
   email: string;
   fullName: string;
   globalRole: "SUPER_ADMIN" | "USER";
+  phone?: string | null;
+  accountKind?: string | null;
+  emailVerifiedAt?: string | null;
+  lastLoginAt?: string | null;
+  createdAt?: string | null;
 };
 
 @Injectable()
@@ -37,9 +43,15 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     }
     return {
       id: user.id,
+      userCode: user.userCode,
       email: user.email,
       fullName: user.fullName,
       globalRole: user.globalRole,
+      phone: user.phone,
+      accountKind: user.accountKind,
+      emailVerifiedAt: user.emailVerifiedAt?.toISOString() ?? null,
+      lastLoginAt: user.lastLoginAt?.toISOString() ?? null,
+      createdAt: user.createdAt.toISOString(),
     };
   }
 }

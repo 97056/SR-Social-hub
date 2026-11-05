@@ -140,31 +140,6 @@ export const PLATFORM_CATALOG: PlatformCatalogEntry[] = [
     liveTokenUrl: "https://oauth2.googleapis.com/token",
   },
   {
-    code: "TIKTOK",
-    displayName: "TikTok",
-    mockPrefix: "tt",
-    accountLabel: "TikTok Creator",
-    scopes: ["user.info.basic", "video.publish", "video.upload"],
-    capabilities: {
-      publishText: true,
-      publishImage: false,
-      publishVideo: true,
-      schedule: false,
-      assistedOnly: false,
-      notes: "Content Posting API requires TikTok developer approval.",
-    },
-    liveAuthorizeUrl: ({ clientId, redirectUri, scopes, state }) => {
-      const q = new URLSearchParams({
-        client_key: clientId,
-        redirect_uri: redirectUri,
-        response_type: "code",
-        scope: scopes.join(","),
-        state,
-      });
-      return `https://www.tiktok.com/v2/auth/authorize/?${q.toString()}`;
-    },
-  },
-  {
     code: "PINTEREST",
     displayName: "Pinterest",
     mockPrefix: "pin",
@@ -215,33 +190,5 @@ export const PLATFORM_CATALOG: PlatformCatalogEntry[] = [
       return `https://threads.net/oauth/authorize?${q.toString()}`;
     },
     liveTokenUrl: "https://graph.threads.net/oauth/access_token",
-  },
-  {
-    code: "GOOGLE_BUSINESS",
-    displayName: "Google Business Profile",
-    mockPrefix: "gbp",
-    accountLabel: "Business Location",
-    scopes: ["https://www.googleapis.com/auth/business.manage"],
-    capabilities: {
-      publishText: true,
-      publishImage: true,
-      publishVideo: false,
-      schedule: false,
-      assistedOnly: false,
-      notes: "Only post types permitted by the current Business Profile API are supported.",
-    },
-    liveAuthorizeUrl: ({ clientId, redirectUri, scopes, state }) => {
-      const q = new URLSearchParams({
-        client_id: clientId,
-        redirect_uri: redirectUri,
-        response_type: "code",
-        scope: scopes.join(" "),
-        access_type: "offline",
-        state,
-        prompt: "consent",
-      });
-      return `https://accounts.google.com/o/oauth2/v2/auth?${q.toString()}`;
-    },
-    liveTokenUrl: "https://oauth2.googleapis.com/token",
   },
 ];

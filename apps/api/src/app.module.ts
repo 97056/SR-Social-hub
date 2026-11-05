@@ -9,6 +9,7 @@ import { BrandingModule } from "./branding/branding.module";
 import { ClientsModule } from "./clients/clients.module";
 import { CompaniesModule } from "./companies/companies.module";
 import { HealthModule } from "./health/health.module";
+import { MailModule } from "./mail/mail.module";
 import { NotificationsModule } from "./notifications/notifications.module";
 import { PrismaModule } from "./prisma/prisma.module";
 import { ApprovalsModule } from "./approvals/approvals.module";
@@ -22,6 +23,7 @@ import { SocialModule } from "./social/social.module";
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     PrismaModule,
+    MailModule,
     HealthModule,
     PublicModule,
     AuthModule,

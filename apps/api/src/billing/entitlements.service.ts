@@ -1,4 +1,5 @@
 import { ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
+import type { SocialPlatformCode } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 
 export type CompanyEntitlements = {
@@ -12,6 +13,9 @@ export type CompanyEntitlements = {
   periodEndsAt: string | null;
   publishingAllowed: boolean;
   publishingBlockReason: string | null;
+  /** How many distinct networks this plan unlocks (e.g. Starter = 3, Growth = 7). */
+  maxSocialNetworks: number;
+  networksUsed: number;
   quotas: {
     clients: { used: number; limit: number; remaining: number };
     accounts: { used: number; limit: number; remaining: number };
@@ -36,7 +40,7 @@ export class EntitlementsService {
     });
     if (!company) throw new NotFoundException("Company not found");
 
-    const [subscription, connectedAccounts, mediaAgg] = await Promise.all([
+    const [subscription, connectedAccounts, networkGroups, mediaAgg] = await Promise.all([
       this.prisma.subscription.findFirst({
         where: {
           companyId,
@@ -48,6 +52,14 @@ export class EntitlementsService {
       this.prisma.socialAccount.count({
         where: { companyId, status: { not: "DISCONNECTED" } },
       }),
+      this.prisma.socialAccount.groupBy({
+        by: ["platformCode"],
+        where: {
+          companyId,
+          status: { not: "DISCONNECTED" },
+          platformCode: { notIn: ["TIKTOK", "GOOGLE_BUSINESS"] },
+        },
+      }),
       this.prisma.mediaAsset.aggregate({
         where: { companyId },
         _sum: { sizeBytes: true },
@@ -56,8 +68,28 @@ export class EntitlementsService {
 
     const plan = subscription?.plan ?? company.plan;
     const addonSeats = subscription?.addonClientSeats ?? 0;
-    const clientLimit = (plan?.clientQuota ?? 0) + addonSeats;
-    const accountLimit = plan?.accountQuota ?? 0;
+    const isTrialing =
+      subscription?.status === "TRIALING" ||
+      (company.status === "TRIAL" && subscription?.status !== "ACTIVE");
+
+    // Free trial: 7 days, 1 client only, limited social connects — paid plan unlocks full quotas.
+    const trialClientCap = 1;
+    const trialAccountCap = 2;
+    const trialNetworkCap = 2;
+
+    const planEntitlements = (plan?.entitlements ?? {}) as {
+      maxSocialNetworks?: number;
+    };
+    let maxSocialNetworks = planEntitlements.maxSocialNetworks ?? plan?.accountQuota ?? 7;
+
+    let clientLimit = (plan?.clientQuota ?? 0) + addonSeats;
+    let accountLimit = plan?.accountQuota ?? 0;
+    if (isTrialing) {
+      clientLimit = Math.min(Math.max(clientLimit, 1), trialClientCap);
+      accountLimit = Math.min(Math.max(accountLimit, 1), trialAccountCap);
+      maxSocialNetworks = Math.min(maxSocialNetworks, trialNetworkCap);
+    }
+    const networksUsed = networkGroups.length;
     const teamLimit = plan?.teamQuota ?? 0;
     const storageLimit = plan?.storageMb ?? 0;
     const aiLimit = plan?.aiQuota ?? 0;
@@ -94,6 +126,8 @@ export class EntitlementsService {
       periodEndsAt: subscription?.currentPeriodEnd?.toISOString() ?? null,
       publishingAllowed: publishing.allowed,
       publishingBlockReason: publishing.reason,
+      maxSocialNetworks,
+      networksUsed,
       quotas: {
         clients: {
           used: company._count.clients,
@@ -138,14 +172,42 @@ export class EntitlementsService {
   async assertCanCreateClient(companyId: string) {
     const e = await this.getEntitlements(companyId);
     if (e.quotas.clients.remaining <= 0) {
-      throw new ForbiddenException("Client quota exceeded for current plan");
+      const trialHint =
+        e.subscriptionStatus === "TRIALING" || e.companyStatus === "TRIAL"
+          ? " Free trial allows 1 client only — upgrade to add more."
+          : "";
+      throw new ForbiddenException(`Client quota exceeded for current plan.${trialHint}`);
     }
   }
 
-  async assertCanConnectAccount(companyId: string) {
+  async assertCanConnectAccount(companyId: string, platformCode?: SocialPlatformCode) {
     const e = await this.getEntitlements(companyId);
     if (e.quotas.accounts.remaining <= 0) {
-      throw new ForbiddenException("Connected account quota exceeded for current plan");
+      const hint =
+        e.subscriptionStatus === "TRIALING" || e.companyStatus === "TRIAL"
+          ? " Trial allows up to 2 social connections. Starter unlocks any 3; Growth unlocks all networks."
+          : e.planCode === "STARTER"
+            ? " Starter includes any 3 social networks. Upgrade to Growth for all networks."
+            : "";
+      throw new ForbiddenException(`Connected account quota exceeded for current plan.${hint}`);
+    }
+
+    if (platformCode) {
+      const already = await this.prisma.socialAccount.findFirst({
+        where: {
+          companyId,
+          platformCode,
+          status: { not: "DISCONNECTED" },
+        },
+        select: { id: true },
+      });
+      if (!already && e.networksUsed >= e.maxSocialNetworks) {
+        throw new ForbiddenException(
+          `Your ${e.planName ?? "plan"} allows ${e.maxSocialNetworks} social network${
+            e.maxSocialNetworks === 1 ? "" : "s"
+          }. Disconnect one or upgrade to connect more.`,
+        );
+      }
     }
   }
 

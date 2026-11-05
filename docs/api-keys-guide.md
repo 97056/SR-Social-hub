@@ -55,7 +55,8 @@ If Package manager stays **pnpm**, install fails (`ERR_PNPM_IGNORED_BUILDS` / Pr
 
 | Field | URL |
 | --- | --- |
-| App logo | http://localhost:3000/brand/logo.svg → later https://srsocialhub.in/brand/logo.svg |
+| App logo | http://localhost:3000/brand/logo.png → later https://srsocialhub.in/brand/logo.png |
+| Favicon / square mark | http://localhost:3000/brand/favicon.png → later https://srsocialhub.in/brand/favicon.png |
 | Privacy | http://localhost:3000/privacy |
 | Terms | http://localhost:3000/terms |
 | Delete account | http://localhost:3000/delete-account |
@@ -116,11 +117,6 @@ Copy this block into a private notes file (do **not** commit secrets to git).
     Client Secret:
     Notes:
 
-[ ] TikTok
-    Client Key:
-    Client Secret:
-    Notes:
-
 [ ] Pinterest
     App ID:
     App Secret:
@@ -129,11 +125,6 @@ Copy this block into a private notes file (do **not** commit secrets to git).
 [ ] Threads (Meta)
     App ID:
     App Secret:
-    Notes:
-
-[ ] Google Business Profile (Google Cloud OAuth client)
-    Client ID:
-    Client Secret:
     Notes:
 ```
 
@@ -241,29 +232,7 @@ Agency login → Social Accounts → pick client → **Connect** Facebook / Inst
 
 ---
 
-## 5. TikTok
-
-**Portal:** https://developers.tiktok.com/
-
-### Steps
-
-1. Create a TikTok developer account / app.
-2. Enable **Login Kit** + **Content Posting API** (approval often required).
-3. Copy **Client key** and **Client secret**.
-4. Redirect URI: `http://localhost:4000/api/v1/oauth/callback`
-5. Scopes used: `user.info.basic`, `video.publish`, `video.upload`.
-
-### Paste into admin
-
-| Field | Value |
-| --- | --- |
-| Platform | `TIKTOK` |
-| OAuth client ID | TikTok Client key |
-| Client secret | TikTok Client secret |
-
----
-
-## 6. Pinterest
+## 5. Pinterest
 
 **Portal:** https://developers.pinterest.com/apps/
 
@@ -285,7 +254,7 @@ Agency login → Social Accounts → pick client → **Connect** Facebook / Inst
 
 ---
 
-## 7. Threads
+## 6. Threads
 
 **Portal:** Meta Developers (Threads API) — https://developers.facebook.com/
 
@@ -303,28 +272,6 @@ Agency login → Social Accounts → pick client → **Connect** Facebook / Inst
 | Platform | `THREADS` |
 | OAuth client ID | Meta App ID |
 | Client secret | Meta App Secret |
-
----
-
-## 8. Google Business Profile
-
-**Portal:** https://console.cloud.google.com/apis/credentials
-
-### Steps
-
-1. Same Google Cloud project pattern as YouTube (can reuse OAuth client **or** create a dedicated one).
-2. Enable **Google Business Profile API** / Business Profile APIs available to your project.
-3. OAuth client (Web) redirect: `http://localhost:4000/api/v1/oauth/callback`
-4. Scope used: `https://www.googleapis.com/auth/business.manage`
-5. You need a verified Business Profile location linked to the Google account that authorizes.
-
-### Paste into admin
-
-| Field | Value |
-| --- | --- |
-| Platform | `GOOGLE_BUSINESS` |
-| OAuth client ID | Google OAuth Client ID |
-| Client secret | Google Client Secret |
 
 ---
 

@@ -46,11 +46,12 @@ export const PLATFORM_RULES: Record<SocialPlatformCode, PlatformRule> = {
     supportsLink: true,
     notes: "Requires title + description; video preferred.",
   },
+  // Kept for Prisma enum compatibility; product UI/API exclude TikTok.
   TIKTOK: {
     captionMax: 2200,
     supportsHashtags: true,
     supportsLink: false,
-    notes: "Video-first; caption limits apply.",
+    notes: "Unavailable — TikTok developer access is not offered.",
   },
   PINTEREST: {
     captionMax: 500,
@@ -67,10 +68,11 @@ export const PLATFORM_RULES: Record<SocialPlatformCode, PlatformRule> = {
     supportsLink: true,
     notes: "Text/image/video where officially supported.",
   },
+  // Kept for Prisma enum compatibility; product UI/API exclude Google Business.
   GOOGLE_BUSINESS: {
     captionMax: 1500,
     supportsHashtags: false,
     supportsLink: true,
-    notes: "Only post types permitted by Business Profile API.",
+    notes: "Unavailable — Google Business Profile is not offered.",
   },
 };

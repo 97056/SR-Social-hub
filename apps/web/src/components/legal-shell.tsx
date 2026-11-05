@@ -6,16 +6,17 @@ const links = [
   { href: "/terms", label: "Terms of Service" },
   { href: "/delete-account", label: "Delete Account / Data" },
   { href: "/support", label: "Support" },
-  { href: "/integrations", label: "Integration URLs" },
 ];
 
 export function LegalShell({
   title,
   updated,
+  eyebrow = "Legal",
   children,
 }: {
   title: string;
   updated: string;
+  eyebrow?: string;
   children: React.ReactNode;
 }) {
   return (
@@ -24,11 +25,11 @@ export function LegalShell({
         <div className="mx-auto flex max-w-3xl items-center justify-between gap-4 px-6 py-5">
           <Link href="/" className="flex items-center gap-3">
             <Image
-              src="/brand/logo.svg"
+              src="/brand/logo-mark.png"
               alt="SR Social Hub"
-              width={40}
-              height={40}
-              className="rounded-lg"
+              width={56}
+              height={56}
+              className="h-12 w-12 rounded-full object-cover ring-1 ring-brand-primary/40"
               priority
             />
             <span className="font-display text-lg font-semibold tracking-tight">SR Social Hub</span>
@@ -40,8 +41,8 @@ export function LegalShell({
       </header>
 
       <article className="mx-auto max-w-3xl px-6 py-12">
-        <p className="text-xs font-semibold uppercase tracking-[0.24em] text-brand-secondary">
-          Legal
+        <p className="text-xs font-semibold uppercase tracking-[0.24em] text-brand-primary">
+          {eyebrow}
         </p>
         <h1 className="font-display mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">
           {title}

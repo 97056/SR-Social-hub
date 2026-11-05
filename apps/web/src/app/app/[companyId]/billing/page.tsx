@@ -67,91 +67,43 @@ export default function CompanyBillingPage() {
   const [billing, setBilling] = useState<BillingPayload | null>(null);
   const [plans, setPlans] = useState<Plan[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState<string | null>(null);
-
-  async function load() {
-    const [b, p] = await Promise.all([
-      apiFetch<BillingPayload>(`/companies/${companyId}/billing`),
-      apiFetch<Plan[]>("/billing/plans"),
-    ]);
-    setBilling(b);
-    setPlans(p);
-  }
 
   useEffect(() => {
     if (!getToken()) {
       router.replace("/login");
       return;
     }
-    load().catch((e: Error) => setError(e.message));
+    Promise.all([
+      apiFetch<BillingPayload>(`/companies/${companyId}/billing`),
+      apiFetch<Plan[]>("/billing/plans"),
+    ])
+      .then(([b, p]) => {
+        setBilling(b);
+        setPlans(p);
+      })
+      .catch((e: Error) => setError(e.message));
   }, [companyId, router]);
-
-  async function checkout(planCode: string, interval: "MONTHLY" | "YEARLY") {
-    setBusy(`${planCode}-${interval}`);
-    setError(null);
-    try {
-      setBilling(
-        await apiFetch<BillingPayload>(`/companies/${companyId}/billing/checkout`, {
-          method: "POST",
-          body: JSON.stringify({ planCode, interval }),
-        }),
-      );
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Checkout failed");
-    } finally {
-      setBusy(null);
-    }
-  }
-
-  async function buyAddon() {
-    setBusy("addon");
-    setError(null);
-    try {
-      setBilling(
-        await apiFetch<BillingPayload>(`/companies/${companyId}/billing/addons`, {
-          method: "POST",
-          body: JSON.stringify({ code: "EXTRA_CLIENT", quantity: 1 }),
-        }),
-      );
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Add-on failed");
-    } finally {
-      setBusy(null);
-    }
-  }
-
-  async function cancel(immediate: boolean) {
-    setBusy(immediate ? "cancel-now" : "cancel-end");
-    setError(null);
-    try {
-      setBilling(
-        await apiFetch<BillingPayload>(`/companies/${companyId}/billing/cancel`, {
-          method: "POST",
-          body: JSON.stringify({ immediate }),
-        }),
-      );
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Cancel failed");
-    } finally {
-      setBusy(null);
-    }
-  }
 
   const e = billing?.entitlements;
 
   return (
-    <AppShell title="Billing" subtitle="Plans, invoices, and quotas" nav={companyNav(companyId)}>
+    <AppShell title="Billing" subtitle="Plan & usage (admin-managed)" nav={companyNav(companyId)}>
       {error ? <p className="mb-4 text-sm text-brand-error">{error}</p> : null}
-      {billing?.note ? <p className="mb-4 text-sm text-content-muted">{billing.note}</p> : null}
 
-      <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard label="Plan" value={e?.planName ?? "—"} />
+      <div className="panel mb-6 border-brand-primary/20 bg-brand-primary/5 p-4 text-sm leading-6 text-content-muted sm:p-5">
+        Plan prices, client quotas, and custom negotiations are managed by{" "}
+        <span className="text-content">SR Social Hub admin</span> only. Contact your administrator to
+        upgrade, downgrade, or negotiate a custom client quota.
+      </div>
+
+      <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <StatCard label="Your plan" value={e?.planName ?? "—"} />
         <StatCard
           label="Status"
           value={e?.subscriptionStatus ?? (e?.publishingAllowed ? "OK" : "Restricted")}
         />
         <StatCard
-          label="Clients"
+          label="Client profiles"
           value={`${e?.quotas.clients.used ?? 0}/${e?.quotas.clients.limit ?? 0}`}
         />
         <StatCard
@@ -167,92 +119,58 @@ export default function CompanyBillingPage() {
       ) : null}
 
       <section className="mb-8">
-        <h2 className="mb-3 font-display text-xl font-semibold">Plans</h2>
-        <div className="grid gap-4 lg:grid-cols-2">
-          {plans
-            .filter((p) => !p.isCustom)
-            .map((plan) => (
-              <div key={plan.code} className="panel space-y-3 p-5">
-                <div className="flex items-baseline justify-between gap-3">
-                  <h3 className="font-display text-lg font-semibold">{plan.name}</h3>
-                  <p className="text-sm text-content-muted">
-                    ₹{plan.monthlyPriceInr}/mo
-                    {plan.yearlyPriceInr ? ` · ₹${plan.yearlyPriceInr}/yr` : null}
+        <h2 className="mb-3 font-display text-xl font-semibold">Catalog (reference)</h2>
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          {plans.map((plan) => {
+            const current = e?.planCode === plan.code;
+            return (
+              <div
+                key={plan.code}
+                className={`panel p-5 ${current ? "ring-1 ring-brand-primary/50" : ""}`}
+              >
+                <p className="text-[11px] uppercase tracking-[0.18em] text-content-muted">{plan.code}</p>
+                <h3 className="mt-2 font-display text-lg font-semibold">{plan.name}</h3>
+                {plan.isCustom ? (
+                  <p className="mt-3 text-sm text-brand-primary">Quota negotiated with admin</p>
+                ) : (
+                  <p className="mt-3 font-display text-2xl font-semibold">
+                    ₹{plan.monthlyPriceInr}
+                    <span className="text-sm font-sans font-normal text-content-muted">/mo</span>
                   </p>
-                </div>
-                <p className="text-sm text-content-muted">{plan.clientQuota} clients included</p>
-                <div className="flex flex-wrap gap-2">
-                  <button
-                    className="rounded-xl bg-brand-primary px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
-                    disabled={busy !== null}
-                    onClick={() => checkout(plan.code, "MONTHLY")}
-                  >
-                    {busy === `${plan.code}-MONTHLY` ? "Processing…" : "Subscribe monthly"}
-                  </button>
-                  <button
-                    className="rounded-xl border border-white/15 px-4 py-2 text-sm font-semibold disabled:opacity-50"
-                    disabled={busy !== null || !plan.yearlyPriceInr}
-                    onClick={() => checkout(plan.code, "YEARLY")}
-                  >
-                    {busy === `${plan.code}-YEARLY` ? "Processing…" : "Subscribe yearly"}
-                  </button>
-                </div>
+                )}
+                <p className="mt-2 text-sm text-content-muted">
+                  {plan.isCustom
+                    ? "Custom client seats"
+                    : `${plan.clientQuota} client profiles included`}
+                </p>
+                {current ? (
+                  <p className="mt-4 text-xs font-semibold text-brand-secondary">Current plan</p>
+                ) : null}
               </div>
-            ))}
+            );
+          })}
         </div>
-      </section>
-
-      <section className="mb-8 space-y-3">
-        <h2 className="font-display text-xl font-semibold">Subscription actions</h2>
-        <div className="flex flex-wrap gap-2">
-          <button
-            className="rounded-xl border border-white/15 px-4 py-2 text-sm font-semibold disabled:opacity-50"
-            disabled={busy !== null}
-            onClick={() => buyAddon()}
-          >
-            {busy === "addon" ? "Adding…" : "Add client seat (+₹299)"}
-          </button>
-          <button
-            className="rounded-xl border border-white/15 px-4 py-2 text-sm font-semibold disabled:opacity-50"
-            disabled={busy !== null || !billing?.subscription}
-            onClick={() => cancel(false)}
-          >
-            Cancel at period end
-          </button>
-          <button
-            className="rounded-xl border border-brand-error/40 px-4 py-2 text-sm font-semibold text-brand-error disabled:opacity-50"
-            disabled={busy !== null || !billing?.subscription}
-            onClick={() => cancel(true)}
-          >
-            Cancel immediately
-          </button>
-        </div>
-        {billing?.subscription?.cancelAtPeriodEnd ? (
-          <p className="text-sm text-content-muted">
-            Cancellation scheduled for {new Date(billing.subscription.currentPeriodEnd).toLocaleString()}.
-          </p>
-        ) : null}
       </section>
 
       <section className="mb-8">
         <h2 className="mb-3 font-display text-xl font-semibold">Invoices</h2>
-        <div className="overflow-x-auto">
+        <div className="panel overflow-x-auto">
           <table className="w-full min-w-[520px] text-left text-sm">
             <thead className="text-content-muted">
               <tr>
-                <th className="pb-2 font-medium">Number</th>
-                <th className="pb-2 font-medium">Status</th>
-                <th className="pb-2 font-medium">Total</th>
-                <th className="pb-2 font-medium">Paid</th>
+                <th className="px-4 py-3 font-medium">Number</th>
+                <th className="px-4 py-3 font-medium">Status</th>
+                <th className="px-4 py-3 font-medium">Total</th>
+                <th className="px-4 py-3 font-medium">Paid</th>
               </tr>
             </thead>
             <tbody>
               {(billing?.invoices ?? []).map((inv) => (
                 <tr key={inv.id} className="border-t border-white/10">
-                  <td className="py-2">{inv.number}</td>
-                  <td className="py-2">{inv.status}</td>
-                  <td className="py-2">₹{inv.totalInr}</td>
-                  <td className="py-2">
+                  <td className="px-4 py-3">{inv.number}</td>
+                  <td className="px-4 py-3">{inv.status}</td>
+                  <td className="px-4 py-3">₹{inv.totalInr}</td>
+                  <td className="px-4 py-3">
                     {inv.paidAt ? new Date(inv.paidAt).toLocaleString() : "—"}
                   </td>
                 </tr>
@@ -260,16 +178,16 @@ export default function CompanyBillingPage() {
             </tbody>
           </table>
           {!billing?.invoices?.length ? (
-            <p className="text-sm text-content-muted">No invoices yet.</p>
+            <p className="px-4 py-4 text-sm text-content-muted">No invoices yet.</p>
           ) : null}
         </div>
       </section>
 
       <section>
         <h2 className="mb-3 font-display text-xl font-semibold">Payment history</h2>
-        <ul className="space-y-2 text-sm">
+        <ul className="panel divide-y divide-white/10 text-sm">
           {(billing?.payments ?? []).map((p) => (
-            <li key={p.id} className="flex flex-wrap justify-between gap-2 border-t border-white/10 py-2">
+            <li key={p.id} className="flex flex-wrap justify-between gap-2 px-4 py-3">
               <span>
                 ₹{p.amountInr} · {p.status}
                 {p.providerPaymentId ? ` · ${p.providerPaymentId}` : ""}
@@ -278,7 +196,7 @@ export default function CompanyBillingPage() {
             </li>
           ))}
           {!billing?.payments?.length ? (
-            <li className="text-content-muted">No payments yet.</li>
+            <li className="px-4 py-4 text-content-muted">No payments yet.</li>
           ) : null}
         </ul>
       </section>

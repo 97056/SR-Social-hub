@@ -52,6 +52,9 @@ export default function CommandCenterPage() {
                 <p className="mt-1 text-content-muted">{item.detail}</p>
               </li>
             ))}
+            {!data?.attention?.length ? (
+              <li className="text-sm text-content-muted">Nothing needs attention right now.</li>
+            ) : null}
           </ul>
           <div className="mt-4 flex flex-wrap gap-2">
             <button

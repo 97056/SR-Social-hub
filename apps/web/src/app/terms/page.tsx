@@ -35,7 +35,7 @@ export default function TermsPage() {
       <h2>3. Acceptable use</h2>
       <p>You agree not to:</p>
       <ul>
-        <li>Violate platform policies of Meta, LinkedIn, X, Google, TikTok, Pinterest, or others.</li>
+        <li>Violate platform policies of Meta, LinkedIn, X, Google, Pinterest, or others.</li>
         <li>Upload unlawful, infringing, or harmful content.</li>
         <li>Attempt unauthorized access, abuse APIs, or disrupt the service.</li>
         <li>Misrepresent AI-generated drafts as guaranteed performance outcomes.</li>

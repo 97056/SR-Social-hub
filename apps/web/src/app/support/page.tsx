@@ -1,74 +1,85 @@
 import type { Metadata } from "next";
-import { LegalShell } from "@/components/legal-shell";
+import { SiteFooter, SiteHeader } from "@/components/site-chrome";
+import { fetchPublicBranding } from "@/lib/branding";
 
 export const metadata: Metadata = {
   title: "Support · SR Social Hub",
-  description: "Contact and support information for SR Social Hub.",
+  description: "FAQs and help for SR Social Hub.",
 };
 
-export default function SupportPage() {
+type FaqItem = {
+  id: string;
+  question: string;
+  answer: string;
+  published: boolean;
+  sortOrder: number;
+};
+
+async function fetchFaqs(): Promise<FaqItem[]> {
+  const api = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
+  try {
+    const res = await fetch(`${api}/api/v1/faqs`, { next: { revalidate: 30 } });
+    if (!res.ok) return [];
+    return (await res.json()) as FaqItem[];
+  } catch {
+    return [];
+  }
+}
+
+export default async function SupportPage() {
+  const [brand, faqs] = await Promise.all([fetchPublicBranding(), fetchFaqs()]);
+
   return (
-    <LegalShell title="Support" updated="3 November 2026">
-      <p>
-        Need help with onboarding, OAuth connections, billing, or account deletion? Reach us using
-        the contacts below.
-      </p>
+    <main className="landing relative min-h-screen overflow-x-hidden">
+      <div className="pointer-events-none absolute inset-0 -z-10">
+        <div className="landing-glow landing-glow-a" />
+        <div className="landing-glow landing-glow-b" />
+        <div className="landing-grid" />
+      </div>
 
-      <h2>Contact</h2>
-      <ul>
-        <li>
-          General support:{" "}
-          <a className="text-brand-secondary underline" href="mailto:support@srsocialhub.local">
-            support@srsocialhub.local
-          </a>
-        </li>
-        <li>
-          Privacy / deletion:{" "}
-          <a className="text-brand-secondary underline" href="mailto:privacy@srsocialhub.local">
-            privacy@srsocialhub.local
-          </a>
-        </li>
-        <li>
-          Legal:{" "}
-          <a className="text-brand-secondary underline" href="mailto:legal@srsocialhub.local">
-            legal@srsocialhub.local
-          </a>
-        </li>
-      </ul>
+      <SiteHeader logoUrl={brand.logoUrl} platformName={brand.platformName} />
 
-      <h2>Common links for developer consoles</h2>
-      <ul>
-        <li>
-          Privacy Policy:{" "}
-          <a className="text-brand-secondary underline" href="/privacy">
-            /privacy
-          </a>
-        </li>
-        <li>
-          Terms of Service:{" "}
-          <a className="text-brand-secondary underline" href="/terms">
-            /terms
-          </a>
-        </li>
-        <li>
-          Delete account / user data:{" "}
-          <a className="text-brand-secondary underline" href="/delete-account">
-            /delete-account
-          </a>
-        </li>
-        <li>
-          App logo:{" "}
-          <a className="text-brand-secondary underline" href="/brand/logo.svg">
-            /brand/logo.svg
-          </a>
-        </li>
-      </ul>
+      <section className="mx-auto max-w-3xl px-6 pb-16 pt-12">
+        <p className="landing-eyebrow text-[11px] font-semibold uppercase tracking-[0.28em]">
+          Help center
+        </p>
+        <h1 className="landing-heading font-display mt-3 text-4xl font-semibold tracking-tight sm:text-5xl">
+          Support
+        </h1>
+        <p className="mt-4 text-base leading-7 text-content-muted">
+          Browse answers about trials, plans, approvals, publishing, and account help. Manage these
+          FAQs anytime from Admin → Support FAQs.
+        </p>
 
-      <h2>Local demo logins</h2>
-      <p className="text-xs">
-        Admin, agency, and client seed accounts are listed in the setup docs. Do not use demo
-        credentials in production.
-      </p>
-    </LegalShell>
+        <div className="mt-10 space-y-3">
+          {faqs.length ? (
+            faqs.map((faq) => (
+              <details
+                key={faq.id}
+                className="group rounded-2xl border border-white/10 bg-white/[0.03] px-5 py-4 open:border-brand-primary/35 open:bg-brand-primary/5"
+              >
+                <summary className="cursor-pointer list-none font-display text-base font-semibold text-white marker:content-none [&::-webkit-details-marker]:hidden">
+                  <span className="flex items-start justify-between gap-3">
+                    <span>{faq.question}</span>
+                    <span className="mt-0.5 text-brand-primary transition group-open:rotate-45">+</span>
+                  </span>
+                </summary>
+                <p className="mt-3 text-sm leading-6 text-content-muted">{faq.answer}</p>
+              </details>
+            ))
+          ) : (
+            <p className="rounded-2xl border border-white/10 bg-white/[0.03] px-5 py-6 text-sm text-content-muted">
+              FAQs will appear here once published from Admin → Support FAQs.
+            </p>
+          )}
+        </div>
+      </section>
+
+      <SiteFooter
+        platformName={brand.platformName}
+        supportEmail={brand.supportEmail}
+        logoUrl="/brand/logo-mark.png"
+      />
+    </main>
   );
 }

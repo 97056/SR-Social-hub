@@ -35,8 +35,8 @@ export class FacebookAdapter implements SocialAdapter {
 
   resolveMode(hasCredentials: boolean): AdapterAuthMode {
     if (process.env.SOCIAL_OAUTH_MODE === "mock") return "mock";
-    if (process.env.SOCIAL_OAUTH_MODE === "live" && hasCredentials) return "live";
-    if (hasCredentials && process.env.SOCIAL_OAUTH_MODE !== "mock") return "live";
+    if (hasCredentials) return "live";
+    if (process.env.SOCIAL_OAUTH_MODE === "live") return "unavailable";
     return "mock";
   }
 

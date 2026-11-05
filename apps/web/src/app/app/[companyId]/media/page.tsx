@@ -4,6 +4,7 @@ import { FormEvent, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { AuthImage } from "@/components/auth-image";
 import { AppShell, StatCard } from "@/components/shell";
+import { toast } from "@/components/toast";
 import { apiFetch, getToken } from "@/lib/api";
 import { companyNav } from "@/lib/nav";
 
@@ -61,7 +62,10 @@ export default function MediaLibraryPage() {
     if (!clientId) return;
     const form = e.currentTarget;
     const fileInput = form.elements.namedItem("file") as HTMLInputElement;
-    if (!fileInput.files?.[0]) return;
+    if (!fileInput.files?.[0]) {
+      toast.error("No file selected", "Choose an image or video to upload.");
+      return;
+    }
     setUploading(true);
     setError(null);
     try {
@@ -123,8 +127,8 @@ export default function MediaLibraryPage() {
         </button>
       </div>
 
-      <form onSubmit={onUpload} className="panel mb-6 flex flex-wrap items-center gap-3 p-5">
-        <input name="file" type="file" accept="image/*,video/mp4,video/webm,video/quicktime" required />
+      <form noValidate onSubmit={onUpload} className="panel mb-6 flex flex-wrap items-center gap-3 p-5">
+        <input name="file" type="file" accept="image/*,video/mp4,video/webm,video/quicktime" />
         <button
           disabled={uploading || !clientId}
           className="rounded-xl bg-brand-primary px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"

@@ -15,7 +15,8 @@ import { JwtStrategy } from "./jwt.strategy";
       useFactory: (config: ConfigService) => ({
         secret: config.getOrThrow<string>("JWT_ACCESS_SECRET"),
         signOptions: {
-          expiresIn: (config.get<string>("JWT_ACCESS_TTL") ?? "15m") as `${number}m`,
+          // Default 7 days so sessions survive normal browsing (refresh also supported).
+          expiresIn: (config.get<string>("JWT_ACCESS_TTL") ?? "7d") as unknown as number,
         },
       }),
     }),

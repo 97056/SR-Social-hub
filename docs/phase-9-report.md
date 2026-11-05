@@ -7,12 +7,10 @@
   - LinkedIn
   - X
   - YouTube
-  - TikTok
   - Pinterest
   - Threads
-  - Google Business Profile
 - Official authorize URL builders per provider docs
-- Mock connect/disconnect for all eight
+- Mock connect/disconnect for catalog platforms
 - Mock publishers for architecture-confirmed publishing
 - Live auto-publish remains Facebook-first; other live publishes return `ASSISTED_REQUIRED` until provider certification
 
@@ -25,10 +23,8 @@
 | LinkedIn | Catalog adapter | Verified | Assisted until Marketing API approval |
 | X | Catalog adapter | Verified | Assisted until write-tier access |
 | YouTube | Catalog adapter | Verified | Assisted until upload certification |
-| TikTok | Catalog adapter | Verified | Assisted until Content Posting approval |
 | Pinterest | Catalog adapter | Verified | Assisted until production access |
 | Threads | Catalog adapter | Verified | Assisted until Threads API eligibility |
-| Google Business Profile | Catalog adapter | Verified | Assisted until GBP API enablement |
 
 Mock results are never described as real social media publications.
 

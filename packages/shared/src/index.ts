@@ -36,25 +36,23 @@ export enum SocialPlatformCode {
   LINKEDIN = "LINKEDIN",
   X = "X",
   YOUTUBE = "YOUTUBE",
-  TIKTOK = "TIKTOK",
   PINTEREST = "PINTEREST",
   THREADS = "THREADS",
-  GOOGLE_BUSINESS = "GOOGLE_BUSINESS",
 }
 
 export const DESIGN_TOKENS = {
   dark: {
-    background: "#080D19",
-    sidebar: "#0B1220",
-    card: "#111A2B",
-    elevated: "#162136",
-    primary: "#7565FF",
-    secondary: "#22D3EE",
-    success: "#34D399",
-    warning: "#FBBF24",
-    error: "#FB7185",
-    text: "#F8FAFC",
-    muted: "#94A3B8",
+    background: "#0C1110",
+    sidebar: "#121A18",
+    card: "#17201D",
+    elevated: "#1E2A26",
+    primary: "#E8A54B",
+    secondary: "#3DDC97",
+    success: "#3DDC97",
+    warning: "#F0C14A",
+    error: "#FF6B6B",
+    text: "#F4F1EA",
+    muted: "#9AA8A1",
   },
 } as const;
 

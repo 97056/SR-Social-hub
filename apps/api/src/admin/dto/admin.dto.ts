@@ -1,4 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
+import { Type } from "class-transformer";
 import {
   IsArray,
   IsBoolean,
@@ -10,6 +11,7 @@ import {
   IsString,
   Min,
   MinLength,
+  ValidateNested,
 } from "class-validator";
 
 export class CreateCompanyDto {
@@ -124,6 +126,13 @@ export class UpdatePlanDto {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
+
+  @ApiPropertyOptional({
+    description: "Custom plans use negotiated quota/pricing (admin-managed only)",
+  })
+  @IsOptional()
+  @IsBoolean()
+  isCustom?: boolean;
 
   @ApiPropertyOptional()
   @IsOptional()
@@ -243,4 +252,72 @@ export class UpdateSystemSettingsDto {
   @IsOptional()
   @IsObject()
   featureFlags?: Record<string, boolean>;
+}
+
+export class FaqItemDto {
+  @ApiProperty()
+  @IsString()
+  id!: string;
+
+  @ApiProperty()
+  @IsString()
+  @MinLength(3)
+  question!: string;
+
+  @ApiProperty()
+  @IsString()
+  @MinLength(3)
+  answer!: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  published?: boolean;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  sortOrder?: number;
+}
+
+export class UpdateFaqsDto {
+  @ApiProperty({ type: [FaqItemDto] })
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => FaqItemDto)
+  items!: FaqItemDto[];
+}
+
+export class CreateContactLeadDto {
+  @ApiProperty()
+  @IsString()
+  @MinLength(2)
+  name!: string;
+
+  @ApiProperty()
+  @IsEmail()
+  email!: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  phone?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  company?: string;
+
+  @ApiProperty()
+  @IsString()
+  @MinLength(5)
+  message!: string;
+}
+
+export class UpdateContactLeadDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  status?: "NEW" | "CONTACTED" | "CLOSED";
 }

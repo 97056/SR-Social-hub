@@ -21,10 +21,10 @@
 | LinkedIn | Stub — not available |
 | X | Stub — not available |
 | YouTube | Stub — not available |
-| TikTok | Stub — not available |
+| TikTok | Removed — developer access unavailable |
 | Pinterest | Stub — not available |
 | Threads | Stub — not available |
-| Google Business Profile | Stub — not available |
+| Google Business Profile | Removed — not offered |
 
 Mock connections are **never** described as real Facebook publications.
 

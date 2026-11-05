@@ -1,11 +1,29 @@
-import { Body, Controller, Get, Post, Res, UseGuards } from "@nestjs/common";
-import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
+import {
+  Body,
+  Controller,
+  Get,
+  Post,
+  Res,
+  UploadedFile,
+  UseGuards,
+  UseInterceptors,
+} from "@nestjs/common";
+import { FileInterceptor } from "@nestjs/platform-express";
+import { ApiBearerAuth, ApiBody, ApiConsumes, ApiTags } from "@nestjs/swagger";
 import type { Response } from "express";
+import { memoryStorage } from "multer";
 import { CurrentUser } from "../common/decorators/current-user.decorator";
 import { JwtAuthGuard } from "../common/guards/jwt-auth.guard";
 import { AuthService } from "./auth.service";
 import { AcceptInviteDto } from "./dto/accept-invite.dto";
 import { AdminLoginDto, LoginDto } from "./dto/login.dto";
+import { RefreshDto } from "./dto/refresh.dto";
+import {
+  ActivateAccountDto,
+  ForgotPasswordDto,
+  RegisterDto,
+  ResetPasswordDto,
+} from "./dto/register.dto";
 import type { AuthUser } from "./jwt.strategy";
 
 @ApiTags("auth")
@@ -18,6 +36,44 @@ export class AuthController {
     const result = await this.auth.login(dto.email, dto.password, false);
     this.setRefreshCookie(res);
     return result;
+  }
+
+  @Post("register")
+  @ApiConsumes("multipart/form-data")
+  @ApiBody({
+    schema: {
+      type: "object",
+      properties: {
+        accountKind: { type: "string", enum: ["INDIVIDUAL", "COMPANY"] },
+        fullName: { type: "string" },
+        email: { type: "string" },
+        password: { type: "string" },
+        phone: { type: "string" },
+        companyName: { type: "string" },
+        website: { type: "string" },
+        gstNumber: { type: "string" },
+        gstDocument: { type: "string", format: "binary" },
+      },
+    },
+  })
+  @UseInterceptors(FileInterceptor("gstDocument", { storage: memoryStorage() }))
+  register(@Body() dto: RegisterDto, @UploadedFile() gstDocument?: Express.Multer.File) {
+    return this.auth.register(dto, gstDocument);
+  }
+
+  @Post("activate")
+  activate(@Body() dto: ActivateAccountDto) {
+    return this.auth.activateAccount(dto.token);
+  }
+
+  @Post("forgot-password")
+  forgotPassword(@Body() dto: ForgotPasswordDto) {
+    return this.auth.forgotPassword(dto.email);
+  }
+
+  @Post("reset-password")
+  resetPassword(@Body() dto: ResetPasswordDto) {
+    return this.auth.resetPassword(dto.token, dto.password);
   }
 
   @Post("accept-invite")
@@ -41,6 +97,11 @@ export class AuthController {
     return this.auth.me(user);
   }
 
+  @Post("refresh")
+  refresh(@Body() dto: RefreshDto) {
+    return this.auth.refreshSession(dto.refreshToken);
+  }
+
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard)
   @Post("logout")
@@ -55,7 +116,7 @@ export class AuthController {
       sameSite: "lax",
       secure: process.env.COOKIE_SECURE === "true",
       path: "/",
-      maxAge: 7 * 24 * 60 * 60 * 1000,
+      maxAge: 30 * 24 * 60 * 60 * 1000,
     });
   }
 }

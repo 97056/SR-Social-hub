@@ -23,20 +23,92 @@ export class CompaniesService {
     });
     if (!company) throw new NotFoundException("Company not found");
 
-    const clients = await this.prisma.client.findMany({
-      where: { companyId, isArchived: false },
-      orderBy: { name: "asc" },
-      select: {
-        id: true,
-        name: true,
-        industry: true,
-        logoUrl: true,
-        approvalWorkflow: true,
-        timezone: true,
-        contactEmail: true,
-        updatedAt: true,
-      },
-    });
+    const monthStart = new Date();
+    monthStart.setDate(1);
+    monthStart.setHours(0, 0, 0, 0);
+
+    const [
+      clients,
+      connectedAccounts,
+      postsScheduled,
+      awaitingApproval,
+      publishedThisMonth,
+      publishedJobs,
+      failedJobs,
+      aiUsage,
+      subscription,
+    ] = await Promise.all([
+      this.prisma.client.findMany({
+        where: { companyId, isArchived: false },
+        orderBy: { name: "asc" },
+        select: {
+          id: true,
+          name: true,
+          industry: true,
+          logoUrl: true,
+          website: true,
+          approvalWorkflow: true,
+          timezone: true,
+          contactEmail: true,
+          contactPhone: true,
+          businessName: true,
+          brandVoice: true,
+          updatedAt: true,
+          socialAccounts: {
+            where: { status: { in: ["CONNECTED", "REQUIRES_REAUTH", "EXPIRED"] } },
+            select: {
+              id: true,
+              platformCode: true,
+              accountName: true,
+              username: true,
+              status: true,
+            },
+            orderBy: { platformCode: "asc" },
+          },
+          _count: { select: { posts: true, members: true } },
+        },
+      }),
+      this.prisma.socialAccount.count({
+        where: { companyId, status: "CONNECTED" },
+      }),
+      this.prisma.contentPost.count({
+        where: { companyId, status: "SCHEDULED" },
+      }),
+      this.prisma.contentPost.count({
+        where: { companyId, status: "PENDING_APPROVAL" },
+      }),
+      this.prisma.contentPost.count({
+        where: { companyId, status: "PUBLISHED", updatedAt: { gte: monthStart } },
+      }),
+      this.prisma.publishingJob.count({
+        where: { companyId, status: "PUBLISHED" },
+      }),
+      this.prisma.publishingJob.count({
+        where: { companyId, status: "FAILED" },
+      }),
+      this.prisma.aiUsageRecord.aggregate({
+        where: { companyId },
+        _sum: { units: true },
+      }),
+      this.prisma.subscription.findFirst({
+        where: { companyId },
+        orderBy: { createdAt: "desc" },
+      }),
+    ]);
+
+    const jobTotal = publishedJobs + failedJobs;
+    const planEndsAt =
+      company.status === "TRIAL"
+        ? company.trialEndsAt ?? subscription?.trialEndsAt ?? null
+        : subscription?.currentPeriodEnd ?? company.trialEndsAt ?? null;
+
+    const now = Date.now();
+    const endsMs = planEndsAt ? new Date(planEndsAt).getTime() : null;
+    const msLeft = endsMs != null ? endsMs - now : null;
+    const daysLeft =
+      msLeft == null ? null : Math.max(0, Math.ceil(msLeft / (24 * 60 * 60 * 1000)));
+    const hoursLeft =
+      msLeft == null ? null : Math.max(0, Math.ceil(msLeft / (60 * 60 * 1000)));
 
     return {
       company: {
@@ -45,85 +117,181 @@ export class CompaniesService {
         slug: company.slug,
         status: company.status,
         timezone: company.timezone,
+        website: company.website,
+        phone: company.phone,
+        billingEmail: company.billingEmail,
+        gstNumber: company.gstNumber,
         trialEndsAt: company.trialEndsAt,
+        planEndsAt,
+        planCountdown: {
+          label:
+            company.status === "TRIAL"
+              ? "Free trial ends"
+              : subscription?.status === "ACTIVE"
+                ? "Current plan period ends"
+                : "Plan / access ends",
+          endsAt: planEndsAt,
+          daysLeft,
+          hoursLeft,
+          expired: msLeft != null ? msLeft <= 0 : false,
+          isTrial: company.status === "TRIAL",
+        },
         plan: company.plan
           ? {
               code: company.plan.code,
               name: company.plan.name,
               clientQuota: company.plan.clientQuota,
+              accountQuota: company.plan.accountQuota,
+              teamQuota: company.plan.teamQuota,
               aiQuota: company.plan.aiQuota,
               monthlyPriceInr: company.plan.monthlyPriceInr,
             }
           : null,
+        subscription: subscription
+          ? {
+              status: subscription.status,
+              interval: subscription.interval,
+              currentPeriodEnd: subscription.currentPeriodEnd,
+              trialEndsAt: subscription.trialEndsAt,
+            }
+          : null,
         counts: company._count,
       },
-      clients,
+      clients: clients.map((c) => ({
+        id: c.id,
+        name: c.name,
+        industry: c.industry,
+        logoUrl: c.logoUrl,
+        website: c.website,
+        contactEmail: c.contactEmail,
+        contactPhone: c.contactPhone,
+        businessName: c.businessName,
+        description: c.brandVoice,
+        approvalWorkflow: c.approvalWorkflow,
+        timezone: c.timezone,
+        updatedAt: c.updatedAt,
+        postCount: c._count.posts,
+        memberCount: c._count.members,
+        socials: c.socialAccounts.map((s) => ({
+          id: s.id,
+          platformCode: s.platformCode,
+          accountName: s.accountName,
+          username: s.username,
+          status: s.status,
+        })),
+      })),
       dashboard: {
         totalClients: company._count.clients,
         teamMembers: company._count.members,
-        connectedAccounts: 0,
-        postsScheduled: 0,
-        awaitingApproval: 0,
-        publishedThisMonth: 0,
-        publishingSuccessRate: null,
-        aiUsage: 0,
+        connectedAccounts,
+        postsScheduled,
+        awaitingApproval,
+        publishedThisMonth,
+        publishingSuccessRate: jobTotal ? publishedJobs / jobTotal : null,
+        aiUsage: aiUsage._sum.units ?? 0,
         remainingClientQuota: company.plan
           ? Math.max(company.plan.clientQuota - company._count.clients, 0)
+          : null,
+        remainingSocialQuota: company.plan
+          ? Math.max(company.plan.accountQuota - connectedAccounts, 0)
           : null,
       },
     };
   }
 
   async commandCenter(companyId: string) {
-    const [clients, pendingInvites, members, company] = await Promise.all([
-      this.prisma.client.findMany({
-        where: { companyId, isArchived: false },
-        orderBy: { updatedAt: "desc" },
-        take: 8,
-      }),
-      this.prisma.invitation.findMany({
-        where: { companyId, status: "INVITED", expiresAt: { gt: new Date() } },
-        orderBy: { createdAt: "desc" },
-        take: 10,
-      }),
-      this.prisma.companyMember.findMany({
-        where: { companyId, status: "ACTIVE" },
-        include: { user: { select: { email: true, fullName: true } } },
-      }),
-      this.prisma.company.findUniqueOrThrow({
-        where: { id: companyId },
-        include: { plan: true },
-      }),
-    ]);
+    const startOfDay = new Date();
+    startOfDay.setHours(0, 0, 0, 0);
 
-    return {
-      attention: [
-        {
-          type: "INFO",
-          title: "Publishing engine not enabled yet",
-          detail: "Phase 8 will surface failed jobs and reconnect alerts here.",
-        },
-        ...(company.trialEndsAt && company.trialEndsAt.getTime() - Date.now() < 3 * 86400000
-          ? [
-              {
-                type: "WARNING",
-                title: "Trial ending soon",
-                detail: `Trial ends ${company.trialEndsAt.toISOString()}`,
-              },
-            ]
-          : []),
-      ],
-      today: {
-        campaigns: 0,
-        approvals: 0,
-        publishingJobs: 0,
-        scheduled: 0,
-      },
-      clientsNeedingAttention: clients.slice(0, 5).map((c) => ({
+    const [clients, pendingInvites, members, company, campaignsToday, approvalsToday, jobsToday, scheduledToday, failedJobs, reconnectAccounts, aiUsed] =
+      await Promise.all([
+        this.prisma.client.findMany({
+          where: { companyId, isArchived: false },
+          orderBy: { updatedAt: "desc" },
+          take: 20,
+          include: { _count: { select: { socialAccounts: true } } },
+        }),
+        this.prisma.invitation.findMany({
+          where: { companyId, status: "INVITED", expiresAt: { gt: new Date() } },
+          orderBy: { createdAt: "desc" },
+          take: 10,
+        }),
+        this.prisma.companyMember.findMany({
+          where: { companyId, status: "ACTIVE" },
+          include: { user: { select: { email: true, fullName: true } } },
+        }),
+        this.prisma.company.findUniqueOrThrow({
+          where: { id: companyId },
+          include: { plan: true },
+        }),
+        this.prisma.campaign.count({
+          where: { companyId, createdAt: { gte: startOfDay } },
+        }),
+        this.prisma.contentPost.count({
+          where: { companyId, status: "PENDING_APPROVAL" },
+        }),
+        this.prisma.publishingJob.count({
+          where: { companyId, createdAt: { gte: startOfDay } },
+        }),
+        this.prisma.contentPost.count({
+          where: { companyId, status: "SCHEDULED" },
+        }),
+        this.prisma.publishingJob.count({
+          where: { companyId, status: "FAILED" },
+        }),
+        this.prisma.socialAccount.count({
+          where: { companyId, status: { in: ["REQUIRES_REAUTH", "EXPIRED", "ERROR"] } },
+        }),
+        this.prisma.aiUsageRecord.aggregate({
+          where: { companyId },
+          _sum: { units: true },
+        }),
+      ]);
+
+    const attention: Array<{ type: string; title: string; detail: string }> = [];
+    if (company.trialEndsAt && company.trialEndsAt.getTime() - Date.now() < 3 * 86400000) {
+      attention.push({
+        type: "WARNING",
+        title: "Trial ending soon",
+        detail: `Trial ends ${company.trialEndsAt.toLocaleString()}`,
+      });
+    }
+    if (failedJobs > 0) {
+      attention.push({
+        type: "ERROR",
+        title: "Failed publish jobs",
+        detail: `${failedJobs} job(s) need retry or review.`,
+      });
+    }
+    if (reconnectAccounts > 0) {
+      attention.push({
+        type: "WARNING",
+        title: "Accounts need reconnect",
+        detail: `${reconnectAccounts} social account(s) require re-authorization.`,
+      });
+    }
+
+    const clientsNeedingAttention = clients
+      .filter((c) => c._count.socialAccounts === 0)
+      .slice(0, 5)
+      .map((c) => ({
         id: c.id,
         name: c.name,
-        reason: "No connected accounts yet",
-      })),
+        reason: "No connected accounts",
+      }));
+
+    const aiQuota = company.plan?.aiQuota ?? 0;
+    const used = aiUsed._sum.units ?? 0;
+
+    return {
+      attention,
+      today: {
+        campaigns: campaignsToday,
+        approvals: approvalsToday,
+        publishingJobs: jobsToday,
+        scheduled: scheduledToday,
+      },
+      clientsNeedingAttention,
       pendingInvites: pendingInvites.map((i) => ({
         id: i.id,
         email: i.email,
@@ -136,7 +304,7 @@ export class CompaniesService {
         email: m.user.email,
         fullName: m.user.fullName,
       })),
-      aiCreditsRemaining: company.plan?.aiQuota ?? 0,
+      aiCreditsRemaining: Math.max(aiQuota - used, 0),
     };
   }
 

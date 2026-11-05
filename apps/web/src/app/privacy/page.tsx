@@ -45,8 +45,8 @@ export default function PrivacyPage() {
 
       <h2>3. Social platform permissions</h2>
       <p>
-        When you connect Facebook, Instagram, LinkedIn, X, YouTube, TikTok, Pinterest, Threads, Google
-        Business Profile, or other supported networks, we request only the permissions needed for
+        When you connect Facebook, Instagram, LinkedIn, X, YouTube, Pinterest, Threads, or other
+        supported networks, we request only the permissions needed for
         connection, publishing, and account management as configured for your workspace. You can
         disconnect accounts in the product at any time; you may also revoke access in the provider’s
         security settings.

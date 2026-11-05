@@ -40,7 +40,7 @@ export default function CompanySettingsPage() {
       <div className="mt-4">
         <EmptyState
           title="Subscription and billing"
-          body="Plan upgrades, invoices, and payment webhooks ship in Phase 10. Current plan quotas are already enforced when creating clients."
+          body="Manage billing from the Billing page. Client and social quotas for your current plan are enforced automatically."
         />
       </div>
     </AppShell>

@@ -31,9 +31,12 @@ export class CatalogSocialAdapter implements SocialAdapter {
   }
 
   resolveMode(hasCredentials: boolean): AdapterAuthMode {
+    // Explicit mock for architecture tests only.
     if (process.env.SOCIAL_OAUTH_MODE === "mock") return "mock";
-    if (process.env.SOCIAL_OAUTH_MODE === "live" && hasCredentials) return "live";
-    if (hasCredentials && process.env.SOCIAL_OAUTH_MODE !== "mock") return "live";
+    // Live OAuth when app credentials are configured in Admin → Integrations.
+    if (hasCredentials) return "live";
+    // Live mode without credentials: block connect (no dummy accounts).
+    if (process.env.SOCIAL_OAUTH_MODE === "live") return "unavailable";
     return "mock";
   }
 

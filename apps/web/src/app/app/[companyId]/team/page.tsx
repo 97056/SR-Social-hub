@@ -3,8 +3,10 @@
 import { FormEvent, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { AppShell } from "@/components/shell";
+import { toast } from "@/components/toast";
 import { apiFetch, getToken } from "@/lib/api";
 import { companyNav } from "@/lib/nav";
+import { isEmail, requireFields } from "@/lib/validate";
 
 type CommandCenter = {
   team: Array<{ role: string; email: string; fullName: string }>;
@@ -36,6 +38,7 @@ export default function CompanyTeamPage() {
   async function onInvite(e: FormEvent) {
     e.preventDefault();
     setError(null);
+    if (!requireFields([{ label: "Email", value: email, ok: isEmail(email) }])) return;
     try {
       const res = await apiFetch<{ acceptPath: string }>(`/companies/${companyId}/invitations`, {
         method: "POST",
@@ -43,9 +46,12 @@ export default function CompanyTeamPage() {
       });
       setInviteLink(`${window.location.origin}${res.acceptPath}`);
       setEmail("");
+      toast.success("Invite sent", "Share the invite link with your teammate.");
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Invite failed");
+      const msg = err instanceof Error ? err.message : "Invite failed";
+      setError(msg);
+      toast.error("Invite failed", msg);
     }
   }
 
@@ -58,14 +64,13 @@ export default function CompanyTeamPage() {
         </p>
       ) : null}
 
-      <form onSubmit={onInvite} className="panel mb-6 grid gap-3 p-5 md:grid-cols-3">
+      <form noValidate onSubmit={onInvite} className="panel mb-6 grid gap-3 p-5 md:grid-cols-3">
         <input
-          className="rounded-xl border border-white/10 bg-ink-elevated px-3 py-2 text-sm"
+          className="field mt-0"
           placeholder="Email"
           type="email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          required
         />
         <select
           className="rounded-xl border border-white/10 bg-ink-elevated px-3 py-2 text-sm"

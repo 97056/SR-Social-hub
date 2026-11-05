@@ -43,13 +43,13 @@ export default function AdminDashboardPage() {
     <AppShell title="Platform overview" subtitle="Super Admin" nav={adminNav()}>
       {error ? <p className="mb-4 text-sm text-brand-error">{error}</p> : null}
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard label="Companies" value={data?.metrics.registeredCompanies ?? "—"} />
-        <StatCard label="Active" value={data?.metrics.activeCompanies ?? "—"} />
-        <StatCard label="Trials" value={data?.metrics.trialAccounts ?? "—"} />
-        <StatCard label="Client workspaces" value={data?.metrics.activeClientWorkspaces ?? "—"} />
-        <StatCard label="MRR (₹)" value={data?.metrics.monthlyRecurringRevenue ?? "—"} />
-        <StatCard label="Integrations on" value={data?.metrics.enabledIntegrations ?? "—"} />
-        <StatCard label="Posts created" value={data?.metrics.totalPostsCreated ?? 0} hint="From live data only" />
+        <StatCard label="Companies" value={data?.metrics.registeredCompanies ?? "—"} accent="#7B5CFF" />
+        <StatCard label="Active" value={data?.metrics.activeCompanies ?? "—"} accent="#3DDC97" />
+        <StatCard label="Trials" value={data?.metrics.trialAccounts ?? "—"} accent="#F0C14A" />
+        <StatCard label="Client workspaces" value={data?.metrics.activeClientWorkspaces ?? "—"} accent="#00D2FF" />
+        <StatCard label="MRR (₹)" value={data?.metrics.monthlyRecurringRevenue ?? "—"} accent="#C026FF" />
+        <StatCard label="Integrations on" value={data?.metrics.enabledIntegrations ?? "—"} accent="#FF6B6B" />
+        <StatCard label="Posts created" value={data?.metrics.totalPostsCreated ?? 0} accent="#00D2FF" />
       </div>
       <div className="mt-4 grid gap-4 lg:grid-cols-2">
         <div className="panel p-5">
@@ -72,8 +72,8 @@ export default function AdminDashboardPage() {
           </ul>
         </div>
         <EmptyState
-          title="Phase 2–3 controls online"
-          body="Manage companies, plans, encrypted social configs, branding, and system flags from the admin sidebar. Publishing and OAuth adapters remain later phases."
+          title="Manage the platform"
+          body="Use Companies, Plans, Integrations, Branding, FAQs, Contact Leads, and Mail settings from the sidebar."
         />
       </div>
     </AppShell>

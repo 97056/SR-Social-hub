@@ -2,8 +2,10 @@
 
 import { FormEvent, Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { toast } from "@/components/toast";
 import { apiFetch, setToken } from "@/lib/api";
 import type { LoginResponse } from "@/lib/types";
+import { requireFields } from "@/lib/validate";
 
 function AcceptForm() {
   const router = useRouter();
@@ -16,6 +18,14 @@ function AcceptForm() {
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
+    if (
+      !requireFields([
+        { label: "Full name", value: fullName },
+        { label: "Password", value: password, ok: password.length >= 8 },
+      ])
+    ) {
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
@@ -24,9 +34,12 @@ function AcceptForm() {
         body: JSON.stringify({ token, fullName, password }),
       });
       setToken(result.accessToken);
+      toast.success("Welcome", "Joining workspace…");
       router.replace(result.redirectTo);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Accept failed");
+      const msg = err instanceof Error ? err.message : "Accept failed";
+      setError(msg);
+      toast.error("Accept failed", msg);
     } finally {
       setLoading(false);
     }
@@ -38,14 +51,13 @@ function AcceptForm() {
         Invitation
       </p>
       <h1 className="font-display mt-3 text-3xl font-semibold">Accept invite</h1>
-      <form onSubmit={onSubmit} className="panel mt-8 space-y-4 p-5">
+      <form noValidate onSubmit={onSubmit} className="panel mt-8 space-y-4 p-5">
         <label className="block text-sm">
           <span className="text-content-muted">Full name</span>
           <input
             className="mt-1.5 w-full rounded-xl border border-white/10 bg-ink-elevated px-3 py-2.5"
             value={fullName}
             onChange={(e) => setFullName(e.target.value)}
-            required
           />
         </label>
         <label className="block text-sm">
@@ -55,7 +67,6 @@ function AcceptForm() {
             className="mt-1.5 w-full rounded-xl border border-white/10 bg-ink-elevated px-3 py-2.5"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            required
             minLength={8}
           />
         </label>

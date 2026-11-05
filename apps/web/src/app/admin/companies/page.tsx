@@ -11,7 +11,7 @@ type Company = {
   name: string;
   slug: string;
   status: string;
-  plan: { code: string; name: string; monthlyPriceInr: number } | null;
+  plan: { code: string; name: string; monthlyPriceInr: number; clientQuota?: number } | null;
   _count: { clients: number; members: number };
 };
 
@@ -71,6 +71,14 @@ export default function AdminCompaniesPage() {
     await load();
   }
 
+  async function setPlan(id: string, planCode: string) {
+    await apiFetch(`/admin/companies/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ planCode }),
+    });
+    await load();
+  }
+
   return (
     <AppShell title="Companies" subtitle="Super Admin" nav={adminNav()}>
       {error ? <p className="mb-4 text-sm text-brand-error">{error}</p> : null}
@@ -87,14 +95,12 @@ export default function AdminCompaniesPage() {
           placeholder="Name"
           value={form.name}
           onChange={(e) => setForm({ ...form, name: e.target.value })}
-          required
         />
         <input
           className="rounded-xl border border-white/10 bg-ink-elevated px-3 py-2 text-sm"
           placeholder="slug"
           value={form.slug}
           onChange={(e) => setForm({ ...form, slug: e.target.value })}
-          required
         />
         <select
           className="rounded-xl border border-white/10 bg-ink-elevated px-3 py-2 text-sm"
@@ -132,12 +138,12 @@ export default function AdminCompaniesPage() {
         </button>
       </form>
 
-      <div className="panel overflow-hidden">
-        <table className="w-full text-left text-sm">
+      <div className="panel overflow-x-auto">
+        <table className="w-full min-w-[720px] text-left text-sm">
           <thead className="border-b border-white/10 text-content-muted">
             <tr>
               <th className="px-4 py-3 font-medium">Company</th>
-              <th className="px-4 py-3 font-medium">Plan</th>
+              <th className="px-4 py-3 font-medium">Plan (admin assign)</th>
               <th className="px-4 py-3 font-medium">Clients</th>
               <th className="px-4 py-3 font-medium">Status</th>
               <th className="px-4 py-3 font-medium">Actions</th>
@@ -150,12 +156,24 @@ export default function AdminCompaniesPage() {
                   <p className="font-medium">{c.name}</p>
                   <p className="text-xs text-content-muted">{c.slug}</p>
                 </td>
-                <td className="px-4 py-3">{c.plan?.name ?? "—"}</td>
+                <td className="px-4 py-3">
+                  <select
+                    className="field max-w-[180px] py-1.5"
+                    value={c.plan?.code ?? ""}
+                    onChange={(e) => setPlan(c.id, e.target.value)}
+                  >
+                    {plans.map((p) => (
+                      <option key={p.code} value={p.code}>
+                        {p.name}
+                      </option>
+                    ))}
+                  </select>
+                </td>
                 <td className="px-4 py-3">{c._count.clients}</td>
                 <td className="px-4 py-3">
                   <span className="rounded-lg bg-white/5 px-2 py-1 text-xs">{c.status}</span>
                 </td>
-                <td className="px-4 py-3 space-x-2">
+                <td className="space-x-2 px-4 py-3">
                   <button
                     className="text-xs text-brand-secondary"
                     onClick={() => setStatus(c.id, "ACTIVE")}

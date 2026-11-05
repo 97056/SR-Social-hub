@@ -56,7 +56,7 @@ export default function ClientDashboardPage() {
       <div className="mt-4 grid gap-4 lg:grid-cols-2">
         <EmptyState
           title="Approval inbox"
-          body={`Workflow: ${data?.client.approvalWorkflow ?? "—"}. Full approve/reject/request-changes lands in Phase 7.`}
+          body={`Workflow: ${data?.client.approvalWorkflow ?? "—"}. Open Approvals from the sidebar to review pending posts.`}
         />
         <div className="panel p-5">
           <h2 className="font-display text-lg font-semibold">Members</h2>

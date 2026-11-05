@@ -10,7 +10,7 @@ describe("AuthService", () => {
       findUnique: jest.fn(),
       update: jest.fn(),
     },
-    refreshToken: { create: jest.fn(), updateMany: jest.fn() },
+    refreshToken: { create: jest.fn(), updateMany: jest.fn(), findUnique: jest.fn(), update: jest.fn() },
     auditLog: { create: jest.fn() },
     companyMember: { findMany: jest.fn() },
     clientMember: { findMany: jest.fn() },
@@ -18,7 +18,12 @@ describe("AuthService", () => {
 
   const jwt = { signAsync: jest.fn().mockResolvedValue("token") } as unknown as JwtService;
   const config = { get: jest.fn(), getOrThrow: jest.fn() } as unknown as ConfigService;
-  const service = new AuthService(prisma as never, jwt, config);
+  const mail = {
+    sendMail: jest.fn(),
+    shellHtml: jest.fn().mockReturnValue("<html/>"),
+    clientAccessHtml: jest.fn().mockReturnValue("<html/>"),
+  };
+  const service = new AuthService(prisma as never, jwt, config, mail as never);
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -36,6 +41,7 @@ describe("AuthService", () => {
       id: "1",
       email: "admin@test.com",
       isActive: true,
+      emailVerifiedAt: new Date(),
       globalRole: "SUPER_ADMIN",
       passwordHash: await bcrypt.hash("password1", 4),
       companyMemberships: [],
@@ -52,6 +58,7 @@ describe("AuthService", () => {
       email: "agency@test.com",
       fullName: "Agency",
       isActive: true,
+      emailVerifiedAt: new Date(),
       globalRole: "USER",
       passwordHash: await bcrypt.hash("password1", 4),
       companyMemberships: [

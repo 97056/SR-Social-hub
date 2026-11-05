@@ -84,12 +84,6 @@ export default function IntegrationsPage() {
         </li>
       </ul>
 
-      <h2>Demo login (after API is live + seeded)</h2>
-      <ul>
-        <li>Agency: agency@srsocialhub.local</li>
-        <li>Client: client@srsocialhub.local</li>
-        <li>Admin: admin@srsocialhub.local</li>
-      </ul>
     </LegalShell>
   );
 }

@@ -59,14 +59,21 @@ export class BillingService {
       payments,
       billingMode: process.env.BILLING_MODE === "live" ? "live" : "mock",
       note:
-        process.env.BILLING_MODE === "live"
-          ? "Live payment provider configured."
-          : "Mock billing: payments are simulated locally and never charge a real card.",
+        process.env.BILLING_SELF_SERVE === "true"
+          ? process.env.BILLING_MODE === "live"
+            ? "Live payment provider configured."
+            : "Mock billing: payments are simulated locally and never charge a real card."
+          : "Plans and quotas are managed by SR Social Hub admin only (self-serve checkout disabled).",
     };
   }
 
   async checkout(companyId: string, user: AuthUser, dto: CheckoutDto) {
     await this.assertCompanyOwnerOrAdmin(companyId, user);
+    if (process.env.BILLING_SELF_SERVE !== "true") {
+      throw new BadRequestException(
+        "Plan changes are admin-managed only. Ask SR Social Hub admin to assign a plan or negotiate custom quota.",
+      );
+    }
 
     const plan = await this.prisma.subscriptionPlan.findUnique({
       where: { code: dto.planCode },
@@ -182,6 +189,11 @@ export class BillingService {
 
   async changePlan(companyId: string, user: AuthUser, dto: ChangePlanDto) {
     await this.assertCompanyOwnerOrAdmin(companyId, user);
+    if (process.env.BILLING_SELF_SERVE !== "true") {
+      throw new BadRequestException(
+        "Plan changes are admin-managed only. Ask SR Social Hub admin to assign a plan or negotiate custom quota.",
+      );
+    }
     const plan = await this.prisma.subscriptionPlan.findUnique({ where: { code: dto.planCode } });
     if (!plan || !plan.isActive) throw new NotFoundException("Plan not found");
 
@@ -272,6 +284,11 @@ export class BillingService {
 
   async purchaseAddon(companyId: string, user: AuthUser, dto: PurchaseAddonDto) {
     await this.assertCompanyOwnerOrAdmin(companyId, user);
+    if (process.env.BILLING_SELF_SERVE !== "true") {
+      throw new BadRequestException(
+        "Add-ons are admin-managed only. Ask SR Social Hub admin to adjust client quota.",
+      );
+    }
     if (dto.code !== "EXTRA_CLIENT") {
       throw new BadRequestException("Unsupported add-on code");
     }

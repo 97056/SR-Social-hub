@@ -87,8 +87,8 @@ function SocialAccountsInner() {
     if (connected) {
       setNotice(
         mode === "mock"
-          ? `${connected} connected in mock mode (architecture verified — not a live Facebook auth).`
-          : `${connected} connected via live OAuth.`,
+          ? `${connected} connected (test connection).`
+          : `${connected} connected via OAuth.`,
       );
     }
     (async () => {

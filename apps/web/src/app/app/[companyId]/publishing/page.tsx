@@ -168,7 +168,7 @@ export default function PublishingQueuePage() {
         {!jobs.length ? (
           <EmptyState
             title="Queue is empty"
-            body="Approved posts enqueue publish jobs automatically. Mock Facebook publishes confirm architecture without claiming a live Facebook post."
+            body="Approved posts enqueue publish jobs automatically. Live results appear here once accounts are connected."
           />
         ) : null}
       </div>

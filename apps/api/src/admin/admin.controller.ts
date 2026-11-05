@@ -5,11 +5,14 @@ import type { AuthUser } from "../auth/jwt.strategy";
 import { CurrentUser } from "../common/decorators/current-user.decorator";
 import { JwtAuthGuard } from "../common/guards/jwt-auth.guard";
 import { Roles, RolesGuard } from "../common/guards/roles.guard";
+import { MailService, type MailSettings } from "../mail/mail.service";
 import { AdminService } from "./admin.service";
 import {
   CreateCompanyDto,
   UpdateBrandingDto,
   UpdateCompanyDto,
+  UpdateContactLeadDto,
+  UpdateFaqsDto,
   UpdateIntegrationDto,
   UpdatePlanDto,
   UpdateSystemSettingsDto,
@@ -21,7 +24,10 @@ import {
 @Roles("SUPER_ADMIN")
 @Controller("admin")
 export class AdminController {
-  constructor(private readonly admin: AdminService) {}
+  constructor(
+    private readonly admin: AdminService,
+    private readonly mail: MailService,
+  ) {}
 
   @Get("overview")
   overview() {
@@ -93,5 +99,45 @@ export class AdminController {
   @Patch("settings")
   updateSettings(@CurrentUser() user: AuthUser, @Body() dto: UpdateSystemSettingsDto) {
     return this.admin.updateSystemSettings(user, dto);
+  }
+
+  @Get("faqs")
+  faqs() {
+    return this.admin.getFaqs(false);
+  }
+
+  @Patch("faqs")
+  updateFaqs(@CurrentUser() user: AuthUser, @Body() dto: UpdateFaqsDto) {
+    return this.admin.updateFaqs(user, dto);
+  }
+
+  @Get("contact-leads")
+  contactLeads() {
+    return this.admin.listContactLeads();
+  }
+
+  @Patch("contact-leads/:id")
+  updateContactLead(
+    @CurrentUser() user: AuthUser,
+    @Param("id") id: string,
+    @Body() dto: UpdateContactLeadDto,
+  ) {
+    return this.admin.updateContactLead(user, id, dto);
+  }
+
+  @Get("mail-settings")
+  async mailSettings() {
+    const settings = await this.mail.getSettings();
+    return this.mail.publicSettings(settings);
+  }
+
+  @Patch("mail-settings")
+  async updateMailSettings(@Body() dto: Partial<MailSettings>) {
+    // Ignore masked placeholders so we don't overwrite real secrets
+    const clean = { ...dto };
+    if (clean.smtpPass === "••••••••") delete clean.smtpPass;
+    if (clean.sendgridApiKey === "••••••••") delete clean.sendgridApiKey;
+    if (clean.twilioAuthToken === "••••••••") delete clean.twilioAuthToken;
+    return this.mail.updateSettings(clean);
   }
 }

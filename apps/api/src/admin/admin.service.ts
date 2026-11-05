@@ -6,25 +6,100 @@ import {
 import { GlobalRole, SocialPlatformCode } from "@prisma/client";
 import * as bcrypt from "bcryptjs";
 import { encryptSecret, maskSecret } from "../common/crypto.util";
+import { allocateUserCode } from "../common/user-code.util";
 import { PrismaService } from "../prisma/prisma.service";
 import type { AuthUser } from "../auth/jwt.strategy";
 import {
   CreateCompanyDto,
+  CreateContactLeadDto,
   UpdateBrandingDto,
   UpdateCompanyDto,
+  UpdateContactLeadDto,
+  UpdateFaqsDto,
   UpdateIntegrationDto,
   UpdatePlanDto,
   UpdateSystemSettingsDto,
 } from "./dto/admin.dto";
 
+export type FaqItem = {
+  id: string;
+  question: string;
+  answer: string;
+  published: boolean;
+  sortOrder: number;
+};
+
+export type ContactLead = {
+  id: string;
+  name: string;
+  email: string;
+  phone: string;
+  company: string;
+  message: string;
+  status: "NEW" | "CONTACTED" | "CLOSED";
+  createdAt: string;
+};
+
+const DEFAULT_FAQS: FaqItem[] = [
+  {
+    id: "faq-trial",
+    question: "What do I get during the 7-day free trial?",
+    answer:
+      "Trial unlocks the full approval -> publish workflow with 1 client profile and up to 2 social connections so you can feel the speed before you subscribe.",
+    published: true,
+    sortOrder: 1,
+  },
+  {
+    id: "faq-starter-socials",
+    question: "How many social networks can I connect on Starter (Rs.499)?",
+    answer:
+      "Starter includes 3 client profiles and any 3 social networks of your choice. Upgrade to Growth (Rs.999) to unlock all seven networks and full platform features.",
+    published: true,
+    sortOrder: 2,
+  },
+  {
+    id: "faq-approvals",
+    question: "How do client approvals work inside the platform?",
+    answer:
+      "Your team submits drafts for review. Clients open a focused portal, leave feedback, and approve — without ever seeing credentials or billing. Approved posts move straight into the publishing queue.",
+    published: true,
+    sortOrder: 3,
+  },
+  {
+    id: "faq-publish",
+    question: "Can I publish one post to multiple networks?",
+    answer:
+      "Yes. Compose once, tailor media per channel, then schedule or publish live across connected networks based on your plan limits.",
+    published: true,
+    sortOrder: 4,
+  },
+  {
+    id: "faq-billing",
+    question: "Who controls plans and quotas?",
+    answer:
+      "Super Admin assigns plans, negotiates custom quota, and manages pricing. Agencies see their entitlements on Billing but cannot change plan pricing themselves.",
+    published: true,
+    sortOrder: 5,
+  },
+  {
+    id: "faq-delete",
+    question: "How do I delete my account or request data removal?",
+    answer:
+      "Use the Delete account page (/delete-account) or email privacy@srsocialhub.local. We’ll process deletion requests according to our Privacy Policy.",
+    published: true,
+    sortOrder: 6,
+  },
+];
+
 const DEFAULT_BRANDING = {
   platformName: "SR Social Hub",
-  primaryColor: "#7565FF",
-  secondaryColor: "#22D3EE",
-  logoUrl: "",
-  faviconUrl: "",
+  primaryColor: "#00D2FF",
+  secondaryColor: "#C026FF",
+  logoUrl: "/brand/logo.png",
+  faviconUrl: "/brand/favicon.png",
   loginHeadline: "All your socials. One command center.",
-  loginSubcopy: "Agency workspaces, client approvals, and multi-network publishing.",
+  loginSubcopy:
+    "Agency workspaces, client approvals, and multi-network publishing from one neon-bright hub.",
   supportEmail: "support@srsocialhub.local",
   themeDefault: "dark",
 };
@@ -33,6 +108,8 @@ const DEFAULT_SYSTEM = {
   defaultTimezone: "Asia/Kolkata",
   maintenanceMode: false,
   trialDays: 7,
+  trialClientQuota: 1,
+  trialAccountQuota: 2,
   inviteExpiryHours: 72,
   featureFlags: {
     aiStudio: false,
@@ -52,6 +129,11 @@ export class AdminService {
       trialCompanies,
       clientWorkspaces,
       connectedPlatforms,
+      connectedSocialAccounts,
+      totalPostsCreated,
+      scheduledPublishingJobs,
+      publishedPosts,
+      failedPosts,
       recentActivity,
       plans,
     ] = await Promise.all([
@@ -60,6 +142,13 @@ export class AdminService {
       this.prisma.company.count({ where: { status: "TRIAL" } }),
       this.prisma.client.count({ where: { isArchived: false } }),
       this.prisma.socialPlatform.count({ where: { enabled: true } }),
+      this.prisma.socialAccount.count({ where: { status: "CONNECTED" } }),
+      this.prisma.contentPost.count(),
+      this.prisma.publishingJob.count({
+        where: { status: { in: ["QUEUED", "SCHEDULED", "RETRY_PENDING"] } },
+      }),
+      this.prisma.publishingJob.count({ where: { status: "PUBLISHED" } }),
+      this.prisma.publishingJob.count({ where: { status: "FAILED" } }),
       this.prisma.auditLog.findMany({
         take: 20,
         orderBy: { createdAt: "desc" },
@@ -86,11 +175,11 @@ export class AdminService {
         activeClientWorkspaces: clientWorkspaces,
         activeSubscriptions: activeCompanies + trialCompanies,
         monthlyRecurringRevenue: mrr,
-        connectedSocialAccounts: 0,
-        totalPostsCreated: 0,
-        scheduledPublishingJobs: 0,
-        publishedPosts: 0,
-        failedPosts: 0,
+        connectedSocialAccounts,
+        totalPostsCreated,
+        scheduledPublishingJobs,
+        publishedPosts,
+        failedPosts,
         enabledIntegrations: connectedPlatforms,
       },
       recentActivity: recentActivity.map((a) => ({
@@ -157,10 +246,13 @@ export class AdminService {
       if (!user) {
         user = await this.prisma.user.create({
           data: {
+            userCode: await allocateUserCode(this.prisma),
             email,
             fullName: dto.ownerName ?? dto.name,
             globalRole: GlobalRole.USER,
             passwordHash: await bcrypt.hash(dto.ownerPassword, 10),
+            isActive: true,
+            emailVerifiedAt: new Date(),
           },
         });
       }
@@ -256,6 +348,7 @@ export class AdminService {
 
   async listIntegrations() {
     const platforms = await this.prisma.socialPlatform.findMany({
+      where: { code: { notIn: ["TIKTOK", "GOOGLE_BUSINESS"] } },
       orderBy: { name: "asc" },
       include: { appConfig: true },
     });
@@ -378,6 +471,104 @@ export class AdminService {
       },
     });
     return value;
+  }
+
+  async getFaqs(publishedOnly = false): Promise<FaqItem[]> {
+    const row = await this.prisma.systemSetting.findUnique({ where: { key: "faqs" } });
+    const stored = (row?.value as { items?: FaqItem[] } | null)?.items;
+    const items = Array.isArray(stored) && stored.length ? stored : DEFAULT_FAQS;
+    const normalized = items
+      .map((item, index) => ({
+        id: item.id || `faq-${index + 1}`,
+        question: item.question,
+        answer: item.answer,
+        published: item.published !== false,
+        sortOrder: item.sortOrder ?? index + 1,
+      }))
+      .sort((a, b) => a.sortOrder - b.sortOrder);
+    return publishedOnly ? normalized.filter((f) => f.published) : normalized;
+  }
+
+  async updateFaqs(actor: AuthUser, dto: UpdateFaqsDto) {
+    const items: FaqItem[] = dto.items.map((item, index) => ({
+      id: item.id || `faq-${Date.now()}-${index}`,
+      question: item.question.trim(),
+      answer: item.answer.trim(),
+      published: item.published !== false,
+      sortOrder: item.sortOrder ?? index + 1,
+    }));
+    const value = { items };
+    await this.prisma.systemSetting.upsert({
+      where: { key: "faqs" },
+      create: { key: "faqs", value },
+      update: { value },
+    });
+    await this.prisma.auditLog.create({
+      data: {
+        actorId: actor.id,
+        action: "ADMIN_FAQS_UPDATED",
+        entityType: "SystemSetting",
+        entityId: "faqs",
+        metadata: { count: items.length },
+      },
+    });
+    return items;
+  }
+
+  private async readContactLeads(): Promise<ContactLead[]> {
+    const row = await this.prisma.systemSetting.findUnique({ where: { key: "contact_leads" } });
+    const stored = (row?.value as { items?: ContactLead[] } | null)?.items;
+    return Array.isArray(stored) ? stored : [];
+  }
+
+  private async writeContactLeads(items: ContactLead[]) {
+    const value = { items };
+    await this.prisma.systemSetting.upsert({
+      where: { key: "contact_leads" },
+      create: { key: "contact_leads", value },
+      update: { value },
+    });
+  }
+
+  async listContactLeads() {
+    const items = await this.readContactLeads();
+    return [...items].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }
+
+  async createContactLead(dto: CreateContactLeadDto) {
+    const items = await this.readContactLeads();
+    const lead: ContactLead = {
+      id: `lead-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      name: dto.name.trim(),
+      email: dto.email.trim().toLowerCase(),
+      phone: (dto.phone ?? "").trim(),
+      company: (dto.company ?? "").trim(),
+      message: dto.message.trim(),
+      status: "NEW",
+      createdAt: new Date().toISOString(),
+    };
+    items.unshift(lead);
+    await this.writeContactLeads(items.slice(0, 500));
+    return { ok: true, id: lead.id };
+  }
+
+  async updateContactLead(actor: AuthUser, id: string, dto: UpdateContactLeadDto) {
+    const items = await this.readContactLeads();
+    const index = items.findIndex((l) => l.id === id);
+    if (index < 0) throw new NotFoundException("Contact lead not found");
+    const status = dto.status ?? items[index].status;
+    items[index] = { ...items[index], status };
+    await this.writeContactLeads(items);
+    await this.prisma.auditLog.create({
+      data: {
+        actorId: actor.id,
+        action: "ADMIN_CONTACT_LEAD_UPDATED",
+        entityType: "ContactLead",
+        entityId: id,
+        metadata: { status },
+      },
+    });
+    return items[index];
   }
 
   async getSystemSettings() {

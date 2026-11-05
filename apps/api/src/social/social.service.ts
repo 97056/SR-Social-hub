@@ -40,11 +40,16 @@ export class SocialService {
     await this.assertClientInCompany(companyId, clientId);
 
     const platforms = await this.prisma.socialPlatform.findMany({
+      where: { code: { notIn: ["TIKTOK", "GOOGLE_BUSINESS"] } },
       orderBy: { name: "asc" },
       include: { appConfig: true },
     });
     const accounts = await this.prisma.socialAccount.findMany({
-      where: { clientId, status: { not: "DISCONNECTED" } },
+      where: {
+        clientId,
+        status: { not: "DISCONNECTED" },
+        platformCode: { notIn: ["TIKTOK", "GOOGLE_BUSINESS"] },
+      },
       orderBy: { updatedAt: "desc" },
     });
 
@@ -81,22 +86,40 @@ export class SocialService {
   }
 
   async listForCompany(companyId: string) {
-    const clients = await this.prisma.client.findMany({
-      where: { companyId, isArchived: false },
-      select: { id: true, name: true },
-      orderBy: { name: "asc" },
-    });
-    const accounts = await this.prisma.socialAccount.findMany({
-      where: { companyId, status: { not: "DISCONNECTED" } },
-      include: { client: { select: { id: true, name: true } } },
-      orderBy: { updatedAt: "desc" },
-    });
-    const platforms = await this.prisma.socialPlatform.findMany({
-      orderBy: { name: "asc" },
-      include: { appConfig: true },
-    });
+    const [clients, accounts, platforms, entitlements] = await Promise.all([
+      this.prisma.client.findMany({
+        where: { companyId, isArchived: false },
+        select: { id: true, name: true },
+        orderBy: { name: "asc" },
+      }),
+      this.prisma.socialAccount.findMany({
+        where: {
+          companyId,
+          status: { not: "DISCONNECTED" },
+          platformCode: { notIn: ["TIKTOK", "GOOGLE_BUSINESS"] },
+        },
+        include: { client: { select: { id: true, name: true } } },
+        orderBy: { updatedAt: "desc" },
+      }),
+      this.prisma.socialPlatform.findMany({
+        where: { code: { notIn: ["TIKTOK", "GOOGLE_BUSINESS"] } },
+        orderBy: { name: "asc" },
+        include: { appConfig: true },
+      }),
+      this.entitlements.getEntitlements(companyId),
+    ]);
+
+    const oauthModeEnv = process.env.SOCIAL_OAUTH_MODE ?? "live";
 
     return {
+      oauthMode: oauthModeEnv,
+      plan: {
+        code: entitlements.planCode,
+        name: entitlements.planName,
+        maxSocialNetworks: entitlements.maxSocialNetworks,
+        networksUsed: entitlements.networksUsed,
+        accountQuota: entitlements.quotas.accounts,
+      },
       clients,
       platforms: platforms.map((p) => {
         const adapter = this.getAdapter(p.code);
@@ -109,8 +132,15 @@ export class SocialService {
           name: p.name,
           enabled: p.enabled,
           mode,
+          hasCredentials,
           capabilities: adapter.getCapabilities(),
           connectable: p.enabled && mode !== "unavailable",
+          setupHint:
+            mode === "unavailable"
+              ? "Add OAuth Client ID + Secret in Admin → Integrations, then enable this network."
+              : mode === "mock"
+                ? "Mock mode is on — connects create demo accounts only."
+                : "Ready for real OAuth connect.",
         };
       }),
       accounts: accounts.map((a) => ({
@@ -138,6 +168,13 @@ export class SocialService {
     await this.assertCanManage(input.companyId, input.user);
     await this.assertClientInCompany(input.companyId, input.clientId);
 
+    if (input.platformCode === "TIKTOK") {
+      throw new BadRequestException("TikTok is not available — developer access is not offered");
+    }
+    if (input.platformCode === "GOOGLE_BUSINESS") {
+      throw new BadRequestException("Google Business Profile is not available");
+    }
+
     const platform = await this.prisma.socialPlatform.findUnique({
       where: { code: input.platformCode },
       include: { appConfig: true },
@@ -156,7 +193,7 @@ export class SocialService {
       },
     });
     if (!existingActive) {
-      await this.entitlements.assertCanConnectAccount(input.companyId);
+      await this.entitlements.assertCanConnectAccount(input.companyId, input.platformCode);
     }
 
     const adapter = this.getAdapter(input.platformCode);
