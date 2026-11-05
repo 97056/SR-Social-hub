@@ -16,8 +16,6 @@ Core SaaS loop is live for local demo (mock OAuth/billing/AI).
 
 ## Quick start
 
-See [docs/setup.md](docs/setup.md).
-
 ```bash
 pnpm install
 pnpm --filter @sr/shared build
@@ -31,10 +29,4 @@ pnpm dev:web
 
 ## Docs
 
-- [Architecture](docs/architecture.md)
-- [Local setup](docs/setup.md)
-- [Phase 1 report](docs/phase-1-report.md)
-- [Phase 9 integrations](docs/phase-9-report.md)
-- [Phase 10 billing](docs/phase-10-report.md)
-- [Phase 11 AI / notifications / analytics](docs/phase-11-report.md)
-- [API keys collection guide](docs/api-keys-guide.md)
+- [Facebook + Threads Live setup](docs/meta-facebook-threads-live.md)
