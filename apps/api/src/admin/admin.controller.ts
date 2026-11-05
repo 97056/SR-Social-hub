@@ -9,6 +9,7 @@ import { MailService, type MailSettings } from "../mail/mail.service";
 import { AdminService } from "./admin.service";
 import {
   CreateCompanyDto,
+  CreatePlanDto,
   UpdateBrandingDto,
   UpdateCompanyDto,
   UpdateContactLeadDto,
@@ -80,6 +81,11 @@ export class AdminController {
   @Get("plans")
   plans() {
     return this.admin.listPlans();
+  }
+
+  @Post("plans")
+  createPlan(@CurrentUser() user: AuthUser, @Body() dto: CreatePlanDto) {
+    return this.admin.createPlan(user, dto);
   }
 
   @Patch("plans/:code")

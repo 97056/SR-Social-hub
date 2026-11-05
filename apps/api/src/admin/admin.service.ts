@@ -12,6 +12,7 @@ import type { AuthUser } from "../auth/jwt.strategy";
 import {
   CreateCompanyDto,
   CreateContactLeadDto,
+  CreatePlanDto,
   UpdateBrandingDto,
   UpdateCompanyDto,
   UpdateContactLeadDto,
@@ -480,6 +481,40 @@ export class AdminService {
 
   listPlans() {
     return this.prisma.subscriptionPlan.findMany({ orderBy: { monthlyPriceInr: "asc" } });
+  }
+
+  async createPlan(actor: AuthUser, dto: CreatePlanDto) {
+    const code = dto.code.trim().toUpperCase();
+    const existing = await this.prisma.subscriptionPlan.findUnique({ where: { code } });
+    if (existing) throw new ConflictException(`Plan code ${code} already exists`);
+
+    const created = await this.prisma.subscriptionPlan.create({
+      data: {
+        code,
+        name: dto.name.trim(),
+        monthlyPriceInr: dto.monthlyPriceInr,
+        yearlyPriceInr: dto.yearlyPriceInr ?? null,
+        clientQuota: dto.clientQuota,
+        aiQuota: dto.aiQuota ?? 100,
+        storageMb: dto.storageMb ?? 1024,
+        accountQuota: dto.accountQuota ?? 20,
+        teamQuota: dto.teamQuota ?? 5,
+        isActive: dto.isActive ?? true,
+        isCustom: dto.isCustom ?? false,
+      },
+    });
+
+    await this.prisma.auditLog.create({
+      data: {
+        actorId: actor.id,
+        action: "ADMIN_PLAN_CREATED",
+        entityType: "SubscriptionPlan",
+        entityId: created.id,
+        metadata: { code, name: created.name } as object,
+      },
+    });
+
+    return created;
   }
 
   async updatePlan(actor: AuthUser, code: string, dto: UpdatePlanDto) {

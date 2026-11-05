@@ -9,6 +9,8 @@ import {
   IsObject,
   IsOptional,
   IsString,
+  Matches,
+  MaxLength,
   Min,
   MinLength,
   ValidateNested,
@@ -140,6 +142,73 @@ export class UpdatePlanDto {
   entitlements?: Record<string, unknown>;
 }
 
+export class CreatePlanDto {
+  @ApiProperty({ example: "GROWTH" })
+  @IsString()
+  @MinLength(2)
+  @MaxLength(32)
+  @Matches(/^[A-Z][A-Z0-9_]*$/, {
+    message: "Plan code must be UPPER_SNAKE (A-Z, 0-9, underscore)",
+  })
+  code!: string;
+
+  @ApiProperty({ example: "Growth · 10 clients" })
+  @IsString()
+  @MinLength(2)
+  @MaxLength(120)
+  name!: string;
+
+  @ApiProperty({ example: 999 })
+  @IsInt()
+  @Min(0)
+  monthlyPriceInr!: number;
+
+  @ApiPropertyOptional({ example: 9990 })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  yearlyPriceInr?: number;
+
+  @ApiProperty({ example: 10 })
+  @IsInt()
+  @Min(1)
+  clientQuota!: number;
+
+  @ApiPropertyOptional({ example: 200 })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  aiQuota?: number;
+
+  @ApiPropertyOptional({ example: 5120 })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  storageMb?: number;
+
+  @ApiPropertyOptional({ example: 20 })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  accountQuota?: number;
+
+  @ApiPropertyOptional({ example: 10 })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  teamQuota?: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  isActive?: boolean;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  isCustom?: boolean;
+}
+
 export class UpdateIntegrationDto {
   @ApiPropertyOptional()
   @IsOptional()
@@ -241,6 +310,18 @@ export class UpdateSystemSettingsDto {
   @IsInt()
   @Min(1)
   trialDays?: number;
+
+  @ApiPropertyOptional({ description: "Max client profiles during free trial" })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  trialClientQuota?: number;
+
+  @ApiPropertyOptional({ description: "Max social accounts during free trial" })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  trialAccountQuota?: number;
 
   @ApiPropertyOptional()
   @IsOptional()

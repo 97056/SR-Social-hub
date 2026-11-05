@@ -72,10 +72,15 @@ export class EntitlementsService {
       subscription?.status === "TRIALING" ||
       (company.status === "TRIAL" && subscription?.status !== "ACTIVE");
 
-    // Free trial: 7 days, 1 client only, limited social connects — paid plan unlocks full quotas.
-    const trialClientCap = 1;
-    const trialAccountCap = 2;
-    const trialNetworkCap = 2;
+    const systemRow = await this.prisma.systemSetting.findUnique({ where: { key: "system" } });
+    const system = (systemRow?.value ?? {}) as {
+      trialClientQuota?: number;
+      trialAccountQuota?: number;
+    };
+    // Free trial caps — editable in Admin → Subscription plans.
+    const trialClientCap = Math.max(1, Number(system.trialClientQuota ?? 1));
+    const trialAccountCap = Math.max(1, Number(system.trialAccountQuota ?? 2));
+    const trialNetworkCap = trialAccountCap;
 
     const planEntitlements = (plan?.entitlements ?? {}) as {
       maxSocialNetworks?: number;
