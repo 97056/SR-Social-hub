@@ -51,6 +51,9 @@ type Workspace = {
       teamQuota: number;
       aiQuota: number;
       monthlyPriceInr: number;
+      maxSocialNetworks?: number;
+      catalogClientQuota?: number;
+      catalogAccountQuota?: number;
     } | null;
     subscription: { status: string; interval: string } | null;
     counts: { clients: number; members: number };
@@ -165,6 +168,11 @@ export default function CompanyDashboardPage() {
               Workspace: <span className="text-[var(--text)]">{data?.company.name ?? "—"}</span>
               {data?.company.gstNumber ? ` · GST ${data.company.gstNumber}` : ""}
             </p>
+            {countdown?.isTrial ? (
+              <p className="mt-2 text-xs text-[var(--muted)]">
+                Trial caps: 1 client · up to 2 social connections (paid plan unlocks full quotas).
+              </p>
+            ) : null}
             <div className="mt-3 flex flex-wrap gap-2 text-xs">
               <span className="rounded-lg border border-[var(--border)] bg-[var(--elevated)] px-2.5 py-1 text-[var(--text)]">
                 Status: {data?.company.status ?? "—"}

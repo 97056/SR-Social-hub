@@ -4,6 +4,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { randomBytes } from "crypto";
+import { EntitlementsService } from "../billing/entitlements.service";
 import { hashToken } from "../common/crypto.util";
 import { PrismaService } from "../prisma/prisma.service";
 import type { AuthUser } from "../auth/jwt.strategy";
@@ -11,7 +12,10 @@ import { InviteClientUserDto, InviteCompanyMemberDto } from "./dto/invite.dto";
 
 @Injectable()
 export class CompaniesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly entitlements: EntitlementsService,
+  ) {}
 
   async getWorkspace(companyId: string) {
     const company = await this.prisma.company.findUnique({
@@ -37,6 +41,7 @@ export class CompaniesService {
       failedJobs,
       aiUsage,
       subscription,
+      entitlements,
     ] = await Promise.all([
       this.prisma.client.findMany({
         where: { companyId, isArchived: false },
@@ -94,9 +99,14 @@ export class CompaniesService {
         where: { companyId },
         orderBy: { createdAt: "desc" },
       }),
+      this.entitlements.getEntitlements(companyId),
     ]);
 
     const jobTotal = publishedJobs + failedJobs;
+    const effectiveClientQuota = entitlements.quotas.clients.limit;
+    const effectiveAccountQuota = entitlements.quotas.accounts.limit;
+    const effectiveTeamQuota = entitlements.quotas.team.limit;
+    const isTrial = entitlements.subscriptionStatus === "TRIALING" || company.status === "TRIAL";
     const planEndsAt =
       company.status === "TRIAL"
         ? company.trialEndsAt ?? subscription?.trialEndsAt ?? null
@@ -134,17 +144,21 @@ export class CompaniesService {
           daysLeft,
           hoursLeft,
           expired: msLeft != null ? msLeft <= 0 : false,
-          isTrial: company.status === "TRIAL",
+          isTrial,
         },
         plan: company.plan
           ? {
               code: company.plan.code,
-              name: company.plan.name,
-              clientQuota: company.plan.clientQuota,
-              accountQuota: company.plan.accountQuota,
-              teamQuota: company.plan.teamQuota,
+              name: isTrial ? `${company.plan.name} (trial limits)` : company.plan.name,
+              // Trial-aware effective quotas (same caps as social-accounts / entitlements).
+              clientQuota: effectiveClientQuota,
+              accountQuota: effectiveAccountQuota,
+              teamQuota: effectiveTeamQuota,
               aiQuota: company.plan.aiQuota,
               monthlyPriceInr: company.plan.monthlyPriceInr,
+              maxSocialNetworks: entitlements.maxSocialNetworks,
+              catalogClientQuota: company.plan.clientQuota,
+              catalogAccountQuota: company.plan.accountQuota,
             }
           : null,
         subscription: subscription
@@ -189,12 +203,8 @@ export class CompaniesService {
         publishedThisMonth,
         publishingSuccessRate: jobTotal ? publishedJobs / jobTotal : null,
         aiUsage: aiUsage._sum.units ?? 0,
-        remainingClientQuota: company.plan
-          ? Math.max(company.plan.clientQuota - company._count.clients, 0)
-          : null,
-        remainingSocialQuota: company.plan
-          ? Math.max(company.plan.accountQuota - connectedAccounts, 0)
-          : null,
+        remainingClientQuota: company.plan ? entitlements.quotas.clients.remaining : null,
+        remainingSocialQuota: company.plan ? entitlements.quotas.accounts.remaining : null,
       },
     };
   }
