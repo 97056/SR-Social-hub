@@ -354,7 +354,11 @@ export class ApprovalsService {
       return { ok: false, reason: "PENDING_APPROVALS_REMAIN", workflow: post.client.approvalWorkflow };
     }
 
-    if (!["APPROVED", "SCHEDULED", "PUBLISHING", "PUBLISHED"].includes(post.status)) {
+    // FAILED is allowed so Retry / Publish now can re-run after a previous publish attempt.
+    // Approvals above already prove the current revision was approved.
+    if (
+      !["APPROVED", "SCHEDULED", "PUBLISHING", "PUBLISHED", "FAILED"].includes(post.status)
+    ) {
       return { ok: false, reason: `INVALID_STATUS_${post.status}`, workflow: post.client.approvalWorkflow };
     }
 

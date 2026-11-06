@@ -253,6 +253,27 @@ export class CatalogSocialAdapter implements SocialAdapter {
           rawMeta: { pageId: page.id, igUserId: ig.id },
         };
       }
+
+      if (this.entry.code === "THREADS") {
+        const meUrl = new URL("https://graph.threads.net/v1.0/me");
+        meUrl.searchParams.set("fields", "id,username,name,threads_profile_picture_url");
+        meUrl.searchParams.set("access_token", accessToken);
+        const meRes = await fetch(meUrl);
+        if (!meRes.ok) return {};
+        const me = (await meRes.json()) as {
+          id?: string;
+          username?: string;
+          name?: string;
+        };
+        if (!me.id) return {};
+        return {
+          externalAccountId: me.id,
+          accountName: me.name || me.username || "Threads Profile",
+          username: me.username || null,
+          pageIdentifier: me.id,
+          rawMeta: { threadsUserId: me.id },
+        };
+      }
     } catch {
       return {};
     }

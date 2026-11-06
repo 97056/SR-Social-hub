@@ -127,6 +127,13 @@ export default function PublishingQueuePage() {
                   {job.socialAccount?.accountName ?? "No account"} ·{" "}
                   {job.socialAccount?.connectionMode ?? "n/a"}
                 </p>
+                <p className="mt-1 text-xs text-content-muted">
+                  Scheduled:{" "}
+                  {job.scheduledAt ? new Date(job.scheduledAt).toLocaleString() : "—"}
+                  {job.publishedAt
+                    ? ` · Published: ${new Date(job.publishedAt).toLocaleString()}`
+                    : ""}
+                </p>
               </div>
               <span className="rounded-lg bg-white/5 px-2 py-1 text-xs">{job.status}</span>
             </div>

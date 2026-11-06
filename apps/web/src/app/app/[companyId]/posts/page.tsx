@@ -11,10 +11,16 @@ type Post = {
   id: string;
   status: string;
   baseCaption: string;
+  scheduledAt?: string | null;
   updatedAt: string;
   client: { id: string; name: string };
-  targets: Array<{ platformCode: string }>;
+  targets: Array<{ platformCode: string; scheduledAt?: string | null }>;
 };
+
+function formatWhen(value?: string | null) {
+  if (!value) return "—";
+  return new Date(value).toLocaleString();
+}
 
 export default function PostsPage() {
   const params = useParams<{ companyId: string }>();
@@ -77,6 +83,7 @@ export default function PostsPage() {
               <th className="px-4 py-3">Client</th>
               <th className="px-4 py-3">Caption</th>
               <th className="px-4 py-3">Targets</th>
+              <th className="px-4 py-3">Scheduled</th>
               <th className="px-4 py-3">Status</th>
               <th className="px-4 py-3">Updated</th>
               <th className="px-4 py-3">Action</th>
@@ -90,11 +97,14 @@ export default function PostsPage() {
                 <td className="px-4 py-3 text-xs">
                   {p.targets.map((t) => t.platformCode).join(", ") || "—"}
                 </td>
+                <td className="px-4 py-3 text-xs text-content-muted">
+                  {formatWhen(p.scheduledAt)}
+                </td>
                 <td className="px-4 py-3">
                   <span className="rounded-lg bg-white/5 px-2 py-1 text-xs">{p.status}</span>
                 </td>
                 <td className="px-4 py-3 text-xs text-content-muted">
-                  {new Date(p.updatedAt).toLocaleString()}
+                  {formatWhen(p.updatedAt)}
                 </td>
                 <td className="px-4 py-3">
                   {["APPROVED", "FAILED", "SCHEDULED"].includes(p.status) ? (
@@ -120,7 +130,7 @@ export default function PostsPage() {
             ))}
             {!posts.length ? (
               <tr>
-                <td className="px-4 py-6 text-content-muted" colSpan={6}>
+                <td className="px-4 py-6 text-content-muted" colSpan={7}>
                   No posts yet.
                 </td>
               </tr>

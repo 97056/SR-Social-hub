@@ -112,7 +112,34 @@ export class PublishingService {
         socialAccountId,
       );
       const existing = await this.prisma.publishingJob.findUnique({ where: { idempotencyKey: key } });
-      if (existing && !["CANCELLED", "FAILED"].includes(existing.status)) {
+      const requeueStatuses = ["CANCELLED", "FAILED", "REQUIRES_REAUTH", "ASSISTED_REQUIRED"];
+      if (existing && !requeueStatuses.includes(existing.status)) {
+        // Already queued/publishing/published — keep as-is unless forcing immediate publish.
+        if (
+          opts?.immediate &&
+          ["QUEUED", "SCHEDULED", "RETRY_PENDING"].includes(existing.status)
+        ) {
+          const bumped = await this.prisma.publishingJob.update({
+            where: { id: existing.id },
+            data: {
+              status: "QUEUED",
+              scheduledAt: new Date(),
+              nextAttemptAt: new Date(),
+              socialAccountId,
+              approvalVerifiedAt: new Date(),
+              contentRevision: post.revision,
+              lastError: null,
+              lockedAt: null,
+              lockedBy: null,
+            },
+          });
+          await this.addEvent(bumped.id, "ENQUEUED", "Job QUEUED (publish now)", {
+            immediate: true,
+            actorId: user?.id,
+          });
+          jobs.push(bumped);
+          continue;
+        }
         jobs.push(existing);
         continue;
       }
@@ -175,6 +202,18 @@ export class PublishingService {
       });
     }
 
+    // Kick due jobs immediately for Publish now so the UI does not wait on the poller.
+    if (opts?.immediate) {
+      for (const job of jobs) {
+        if (["QUEUED", "RETRY_PENDING"].includes(job.status)) {
+          await this.processJob(job.id);
+        }
+      }
+      return this.prisma.publishingJob.findMany({
+        where: { id: { in: jobs.map((j) => j.id) } },
+      });
+    }
+
     return jobs;
   }
 
@@ -195,25 +234,57 @@ export class PublishingService {
   }
 
   async retryJob(jobId: string, user: AuthUser) {
-    const job = await this.prisma.publishingJob.findUnique({ where: { id: jobId } });
+    const job = await this.prisma.publishingJob.findUnique({
+      where: { id: jobId },
+      include: { post: true },
+    });
     if (!job) throw new NotFoundException("Job not found");
     await this.assertCompanyAccess(job.companyId, user);
-    if (!["FAILED", "RETRY_PENDING", "CANCELLED", "REQUIRES_REAUTH"].includes(job.status)) {
+    if (
+      !["FAILED", "RETRY_PENDING", "CANCELLED", "REQUIRES_REAUTH", "ASSISTED_REQUIRED"].includes(
+        job.status,
+      )
+    ) {
       throw new BadRequestException(`Cannot retry job in status ${job.status}`);
     }
+
+    const socialAccountId =
+      (await this.resolveConnectedAccountId({
+        companyId: job.companyId,
+        clientId: job.clientId,
+        platformCode: job.platformCode,
+        preferredId: job.socialAccountId,
+      })) ?? job.socialAccountId;
+
+    if (socialAccountId && job.postTargetId) {
+      await this.prisma.postTarget.update({
+        where: { id: job.postTargetId },
+        data: { socialAccountId, lastError: null },
+      });
+    }
+
+    await this.prisma.contentPost.update({
+      where: { id: job.postId },
+      data: { status: "PUBLISHING" },
+    });
+
     const updated = await this.prisma.publishingJob.update({
       where: { id: jobId },
       data: {
         status: "QUEUED",
         nextAttemptAt: new Date(),
         scheduledAt: new Date(),
+        socialAccountId,
+        contentRevision: job.post.revision,
+        approvalVerifiedAt: new Date(),
         lockedAt: null,
         lockedBy: null,
         lastError: null,
       },
     });
     await this.addEvent(jobId, "RETRY_REQUESTED", "Manual retry", { actorId: user.id });
-    return updated;
+    await this.processJob(jobId);
+    return this.prisma.publishingJob.findUnique({ where: { id: jobId } });
   }
 
   async cancelJob(jobId: string, user: AuthUser) {
@@ -287,19 +358,53 @@ export class PublishingService {
 
     try {
       const verification = await this.approvals.verifyApprovalsValid(job.postId);
-      if (!verification.ok || job.contentRevision !== job.post.revision) {
+      if (!verification.ok) {
         await this.failJob(job.id, "FAILED", `Approval/revision check failed: ${verification.reason ?? "STALE_REVISION"}`, false);
         return { jobId, status: "FAILED" };
       }
+      // Prefer the post's current approved revision when retrying older jobs.
+      if (job.contentRevision !== job.post.revision) {
+        await this.prisma.publishingJob.update({
+          where: { id: job.id },
+          data: { contentRevision: job.post.revision },
+        });
+        job.contentRevision = job.post.revision;
+      }
 
-      if (!job.socialAccount || job.socialAccount.status !== "CONNECTED" || !job.socialAccount.token) {
+      let socialAccount = job.socialAccount;
+      if (!socialAccount || socialAccount.status !== "CONNECTED" || !socialAccount.token) {
+        const reboundId = await this.resolveConnectedAccountId({
+          companyId: job.companyId,
+          clientId: job.clientId,
+          platformCode: job.platformCode,
+          preferredId: job.socialAccountId,
+        });
+        if (reboundId) {
+          socialAccount = await this.prisma.socialAccount.findUnique({
+            where: { id: reboundId },
+            include: { token: true },
+          });
+          await this.prisma.publishingJob.update({
+            where: { id: job.id },
+            data: { socialAccountId: reboundId },
+          });
+          if (job.postTargetId) {
+            await this.prisma.postTarget.update({
+              where: { id: job.postTargetId },
+              data: { socialAccountId: reboundId },
+            });
+          }
+        }
+      }
+
+      if (!socialAccount || socialAccount.status !== "CONNECTED" || !socialAccount.token) {
         await this.failJob(job.id, "REQUIRES_REAUTH", "Social account missing or disconnected", false);
         return { jobId, status: "REQUIRES_REAUTH" };
       }
 
       if (
-        job.socialAccount.tokenExpiresAt &&
-        job.socialAccount.tokenExpiresAt.getTime() < Date.now()
+        socialAccount.tokenExpiresAt &&
+        socialAccount.tokenExpiresAt.getTime() < Date.now()
       ) {
         await this.failJob(job.id, "REQUIRES_REAUTH", "Social token expired", false);
         return { jobId, status: "REQUIRES_REAUTH" };
@@ -312,15 +417,15 @@ export class PublishingService {
       }
 
       const variant = job.post.variants.find((v) => v.platformCode === job.platformCode);
-      const accessToken = decryptSecret(job.socialAccount.token.accessTokenEncrypted);
+      const accessToken = decryptSecret(socialAccount.token.accessTokenEncrypted);
 
       await this.addEvent(job.id, "PUBLISH_ATTEMPT", `Attempt ${job.attemptCount}`);
 
       const result = await publisher.publish({
         platformCode: job.platformCode,
         accessToken,
-        externalAccountId: job.socialAccount.externalAccountId,
-        connectionMode: job.socialAccount.connectionMode,
+        externalAccountId: socialAccount.externalAccountId,
+        connectionMode: socialAccount.connectionMode,
         caption: variant?.caption || job.post.baseCaption,
         title: variant?.title,
         description: variant?.description,
@@ -464,6 +569,41 @@ export class PublishingService {
       where: { id: postId },
       data: { status },
     });
+  }
+
+  private async resolveConnectedAccountId(input: {
+    companyId: string;
+    clientId: string;
+    platformCode: SocialPlatformCode;
+    preferredId?: string | null;
+  }): Promise<string | null> {
+    if (input.preferredId) {
+      const preferred = await this.prisma.socialAccount.findFirst({
+        where: {
+          id: input.preferredId,
+          companyId: input.companyId,
+          clientId: input.clientId,
+          platformCode: input.platformCode,
+          status: "CONNECTED",
+          token: { isNot: null },
+        },
+        select: { id: true },
+      });
+      if (preferred) return preferred.id;
+    }
+
+    const connected = await this.prisma.socialAccount.findFirst({
+      where: {
+        companyId: input.companyId,
+        clientId: input.clientId,
+        platformCode: input.platformCode,
+        status: "CONNECTED",
+        token: { isNot: null },
+      },
+      orderBy: { updatedAt: "desc" },
+      select: { id: true },
+    });
+    return connected?.id ?? null;
   }
 
   private idempotencyKey(
