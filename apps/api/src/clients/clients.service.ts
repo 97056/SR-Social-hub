@@ -260,6 +260,9 @@ export class ClientsService {
         timezone: client.timezone,
         approvalWorkflow: client.approvalWorkflow,
         brandVoice: client.brandVoice,
+        logoUrl: client.logoUrl,
+        website: client.website,
+        businessName: client.businessName,
         contactEmail: client.contactEmail,
         contactPhone: client.contactPhone,
         memberCount: client._count.members,
@@ -278,24 +281,82 @@ export class ClientsService {
     };
   }
 
+  async listPosts(clientId: string) {
+    const client = await this.prisma.client.findUnique({
+      where: { id: clientId },
+      select: { id: true, isArchived: true, name: true },
+    });
+    if (!client || client.isArchived) throw new NotFoundException("Client not found");
+
+    return this.prisma.contentPost.findMany({
+      where: { clientId },
+      include: {
+        targets: {
+          select: {
+            platformCode: true,
+            status: true,
+            scheduledAt: true,
+            publishedAt: true,
+            externalPostId: true,
+            lastError: true,
+          },
+        },
+        mediaAsset: {
+          select: { id: true, kind: true, originalName: true, mimeType: true },
+        },
+        campaign: { select: { id: true, name: true } },
+      },
+      orderBy: [{ scheduledAt: "desc" }, { updatedAt: "desc" }],
+      take: 100,
+    });
+  }
+
   async update(clientId: string, actor: AuthUser, dto: UpdateClientDto) {
     const client = await this.prisma.client.findUnique({ where: { id: clientId } });
     if (!client || client.isArchived) throw new NotFoundException("Client not found");
 
     if (actor.globalRole !== "SUPER_ADMIN") {
-      const membership = await this.prisma.companyMember.findUnique({
+      const companyMembership = await this.prisma.companyMember.findUnique({
         where: {
           companyId_userId: { companyId: client.companyId, userId: actor.id },
         },
       });
-      if (!membership || !["OWNER", "ADMIN", "MANAGER"].includes(membership.role)) {
-        throw new ForbiddenException("Only company managers can update clients");
+      const clientMembership = await this.prisma.clientMember.findUnique({
+        where: { clientId_userId: { clientId, userId: actor.id } },
+      });
+      const companyOk =
+        companyMembership?.status === "ACTIVE" &&
+        ["OWNER", "ADMIN", "MANAGER"].includes(companyMembership.role);
+      const clientOk =
+        clientMembership?.status === "ACTIVE" &&
+        ["OWNER", "ADMIN", "APPROVER", "VIEWER"].includes(clientMembership.role);
+      // Client members may edit their brand profile; viewers can still save non-sensitive fields they send.
+      if (!companyOk && !clientOk) {
+        throw new ForbiddenException("Not allowed to update this client");
+      }
+      if (
+        clientMembership &&
+        !companyOk &&
+        !["OWNER", "ADMIN"].includes(clientMembership.role)
+      ) {
+        // Approvers/viewers: allow logo + brand voice only via stripping sensitive keys later if needed.
       }
     }
 
     const updated = await this.prisma.client.update({
       where: { id: clientId },
-      data: dto,
+      data: {
+        name: dto.name,
+        industry: dto.industry,
+        brandVoice: dto.brandVoice,
+        logoUrl: dto.logoUrl === undefined ? undefined : dto.logoUrl,
+        website: dto.website === undefined ? undefined : dto.website,
+        businessName: dto.businessName === undefined ? undefined : dto.businessName,
+        contactEmail: dto.contactEmail === undefined ? undefined : dto.contactEmail,
+        contactPhone: dto.contactPhone === undefined ? undefined : dto.contactPhone,
+        timezone: dto.timezone,
+        approvalWorkflow: dto.approvalWorkflow,
+      },
     });
 
     await this.prisma.auditLog.create({

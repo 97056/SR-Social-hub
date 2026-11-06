@@ -1,5 +1,5 @@
 import { ApiPropertyOptional } from "@nestjs/swagger";
-import { IsEnum, IsOptional, IsString, MaxLength } from "class-validator";
+import { IsEnum, IsOptional, IsString, Matches, MaxLength } from "class-validator";
 
 export class UpdateClientDto {
   @ApiPropertyOptional()
@@ -25,6 +25,30 @@ export class UpdateClientDto {
   @IsString()
   @MaxLength(2_500_000)
   logoUrl?: string | null;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(300)
+  website?: string | null;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  businessName?: string | null;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  contactEmail?: string | null;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @Matches(/^$|^[6-9]\d{9}$/, { message: "Mobile must be a 10-digit Indian number" })
+  contactPhone?: string | null;
 
   @ApiPropertyOptional()
   @IsOptional()

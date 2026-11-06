@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { AppShell, EmptyState, StatCard } from "@/components/shell";
+import { useClientBrand } from "@/hooks/use-client-brand";
 import { apiFetch, getToken } from "@/lib/api";
 import { clientNav } from "@/lib/nav";
 
@@ -13,6 +14,7 @@ type Workspace = {
     companyName: string;
     approvalWorkflow: string;
     industry: string | null;
+    logoUrl?: string | null;
     members: Array<{ role: string; email: string; fullName: string }>;
   };
   dashboard: {
@@ -27,6 +29,7 @@ export default function ClientDashboardPage() {
   const params = useParams<{ clientId: string }>();
   const router = useRouter();
   const clientId = params.clientId;
+  const brand = useClientBrand(clientId);
   const [data, setData] = useState<Workspace | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -45,6 +48,8 @@ export default function ClientDashboardPage() {
       title={data?.client.name ?? "Client workspace"}
       subtitle={data ? `Managed by ${data.client.companyName}` : "Client"}
       nav={clientNav(clientId)}
+      brandLogoUrl={data?.client.logoUrl || brand?.logoUrl}
+      brandName={data?.client.name || brand?.name}
     >
       {error ? <p className="mb-4 text-sm text-brand-error">{error}</p> : null}
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">

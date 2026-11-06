@@ -305,6 +305,31 @@ export class AdminService {
     });
     if (!company) throw new NotFoundException("Company not found");
 
+    const recentPosts = await this.prisma.contentPost.findMany({
+      where: { companyId },
+      orderBy: [{ updatedAt: "desc" }],
+      take: 40,
+      select: {
+        id: true,
+        status: true,
+        baseCaption: true,
+        scheduledAt: true,
+        updatedAt: true,
+        createdAt: true,
+        client: { select: { id: true, name: true } },
+        targets: {
+          select: {
+            platformCode: true,
+            status: true,
+            publishedAt: true,
+            scheduledAt: true,
+            externalPostId: true,
+            lastError: true,
+          },
+        },
+      },
+    });
+
     const owner = company.members.find((m) => m.role === "OWNER")?.user ?? null;
     const subscription = company.subscriptions[0] ?? null;
     const isTrial =
@@ -320,6 +345,7 @@ export class AdminService {
       planLabel: isTrial
         ? `Free trial · ${company.plan?.name ?? "Starter"} catalog`
         : company.plan?.name ?? "No plan",
+      recentPosts,
     };
   }
 

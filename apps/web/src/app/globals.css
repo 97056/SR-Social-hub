@@ -44,6 +44,17 @@ body {
   min-height: 100%;
 }
 
+/* Hide scrollbars visually while keeping scroll. */
+* {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+*::-webkit-scrollbar {
+  width: 0 !important;
+  height: 0 !important;
+  display: none !important;
+}
+
 body {
   margin: 0;
   color: var(--text);
@@ -152,50 +163,8 @@ html.light .app-nav-icon {
   box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
 }
 
-html.light * {
-  scrollbar-color: #0284c7 rgba(15, 23, 42, 0.08);
-}
-
-html.light *::-webkit-scrollbar-track {
-  background: #e8eef6;
-}
-
-html.light *::-webkit-scrollbar-thumb {
-  background: #0284c7;
-  border-color: #e8eef6;
-}
-
 * {
   border-color: var(--border);
-}
-
-/* Simple colored scrollbars (page + side panels) */
-* {
-  scrollbar-width: thin;
-  scrollbar-color: #00d2ff rgba(255, 255, 255, 0.06);
-}
-
-*::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
-}
-
-*::-webkit-scrollbar-track {
-  background: rgba(12, 18, 36, 0.9);
-}
-
-*::-webkit-scrollbar-thumb {
-  background: #00d2ff;
-  border-radius: 999px;
-  border: 2px solid rgba(12, 18, 36, 0.9);
-}
-
-*::-webkit-scrollbar-thumb:hover {
-  background: #7b5cff;
-}
-
-*::-webkit-scrollbar-corner {
-  background: transparent;
 }
 
 @layer utilities {

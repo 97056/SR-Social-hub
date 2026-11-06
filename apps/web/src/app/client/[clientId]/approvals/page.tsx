@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { ApprovalCard, type InboxItem } from "@/components/approval-card";
 import { AppShell, EmptyState, StatCard } from "@/components/shell";
+import { useClientBrand } from "@/hooks/use-client-brand";
 import { apiFetch, getToken } from "@/lib/api";
 import { clientNav } from "@/lib/nav";
 
@@ -11,6 +12,7 @@ export default function ClientApprovalsPage() {
   const params = useParams<{ clientId: string }>();
   const router = useRouter();
   const clientId = params.clientId;
+  const brand = useClientBrand(clientId);
   const [items, setItems] = useState<InboxItem[]>([]);
   const [error, setError] = useState<string | null>(null);
 
@@ -27,7 +29,13 @@ export default function ClientApprovalsPage() {
   }, [clientId, router]);
 
   return (
-    <AppShell title="Content for approval" subtitle="Client workspace" nav={clientNav(clientId)}>
+    <AppShell
+      title="Content for approval"
+      subtitle={brand ? `Managed by ${brand.companyName}` : "Client workspace"}
+      nav={clientNav(clientId)}
+      brandLogoUrl={brand?.logoUrl}
+      brandName={brand?.name}
+    >
       {error ? <p className="mb-4 text-sm text-brand-error">{error}</p> : null}
       <div className="mb-4">
         <StatCard label="Awaiting your decision" value={items.length} />

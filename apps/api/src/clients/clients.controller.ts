@@ -32,6 +32,12 @@ export class ClientsController {
   }
 
   @UseGuards(JwtAuthGuard, ClientAccessGuard)
+  @Get("clients/:clientId/posts")
+  posts(@Param("clientId") clientId: string) {
+    return this.clients.listPosts(clientId);
+  }
+
+  @UseGuards(JwtAuthGuard, ClientAccessGuard)
   @Patch("clients/:clientId")
   update(
     @Param("clientId") clientId: string,

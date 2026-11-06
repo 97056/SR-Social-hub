@@ -100,7 +100,7 @@ export class ComposerService {
       where: { companyId, clientId: clientId || undefined },
       include: this.postInclude(),
       orderBy: { updatedAt: "desc" },
-      take: 50,
+      take: 100,
     });
   }
 

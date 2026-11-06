@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { AppShell, StatCard } from "@/components/shell";
+import { SocialPlatformIcon, PLATFORM_BRAND_COLOR } from "@/components/social-platform-icon";
 import { toast } from "@/components/toast";
 import { apiFetch, getToken } from "@/lib/api";
 import { companyNav } from "@/lib/nav";
@@ -50,16 +51,6 @@ type Payload = {
   clients: Array<{ id: string; name: string }>;
   platforms: PlatformInfo[];
   accounts: AccountRow[];
-};
-
-const PLATFORM_COLOR: Record<string, string> = {
-  FACEBOOK: "#1877F2",
-  INSTAGRAM: "#E1306C",
-  LINKEDIN: "#0A66C2",
-  X: "#8B98A5",
-  YOUTUBE: "#FF0000",
-  PINTEREST: "#E60023",
-  THREADS: "#A8A8A8",
 };
 
 export default function CompanySocialAccountsPage() {
@@ -208,7 +199,7 @@ export default function CompanySocialAccountsPage() {
         {(data?.platforms ?? []).map((platform) => {
           const accounts = clientAccounts.filter((a) => a.platformCode === platform.code);
           const connected = accounts.length > 0;
-          const color = PLATFORM_COLOR[platform.code] ?? "#7B5CFF";
+          const color = PLATFORM_BRAND_COLOR[platform.code] ?? "#7B5CFF";
           const canConnect = platform.connectable && !!clientId;
 
           return (
@@ -223,10 +214,10 @@ export default function CompanySocialAccountsPage() {
               <div className="flex items-start justify-between gap-3">
                 <div className="flex items-center gap-3">
                   <span
-                    className="grid h-11 w-11 place-items-center rounded-xl text-xs font-bold text-white"
-                    style={{ background: color }}
+                    className="grid h-11 w-11 place-items-center rounded-xl border border-white/10 bg-black/20"
+                    style={{ boxShadow: `0 0 0 1px ${color}33` }}
                   >
-                    {platform.name.slice(0, 2).toUpperCase()}
+                    <SocialPlatformIcon code={platform.code} className="h-6 w-6" />
                   </span>
                   <div>
                     <h2 className="font-display text-lg font-semibold text-[var(--text)]">{platform.name}</h2>

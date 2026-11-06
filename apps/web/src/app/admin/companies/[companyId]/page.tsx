@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { AppShell, StatCard } from "@/components/shell";
+import { SocialPlatformIcon } from "@/components/social-platform-icon";
 import { toast } from "@/components/toast";
 import { apiFetch, getToken } from "@/lib/api";
 import { adminNav } from "@/lib/nav";
@@ -90,6 +91,23 @@ type Detail = {
   }>;
   clients: ClientRow[];
   socialAccounts: SocialRow[];
+  recentPosts?: Array<{
+    id: string;
+    status: string;
+    baseCaption: string;
+    scheduledAt: string | null;
+    updatedAt: string;
+    createdAt: string;
+    client: { id: string; name: string };
+    targets: Array<{
+      platformCode: string;
+      status: string;
+      publishedAt: string | null;
+      scheduledAt: string | null;
+      externalPostId: string | null;
+      lastError: string | null;
+    }>;
+  }>;
   _count: { clients: number; members: number; socialAccounts: number; posts: number };
 };
 
@@ -401,8 +419,14 @@ export default function AdminCompanyDetailPage() {
                         {connected.length ? (
                           <ul className="space-y-1 text-xs">
                             {connected.map((s) => (
-                              <li key={s.id ?? `${c.id}-${s.platformCode}-${s.username}`}>
-                                {s.platformCode} · {s.accountName || s.username || "—"} · {s.status}
+                              <li
+                                key={s.id ?? `${c.id}-${s.platformCode}-${s.username}`}
+                                className="flex items-center gap-1.5"
+                              >
+                                <SocialPlatformIcon code={s.platformCode} className="h-3.5 w-3.5" />
+                                <span>
+                                  {s.platformCode} · {s.accountName || s.username || "—"} · {s.status}
+                                </span>
                               </li>
                             ))}
                           </ul>
@@ -410,7 +434,11 @@ export default function AdminCompanyDetailPage() {
                           <span className="text-xs text-content-muted">None</span>
                         )}
                       </td>
-                      <td className="px-3 py-3">{c._count.posts}</td>
+                      <td className="px-3 py-3">
+                        <span className="rounded-lg bg-white/5 px-2 py-1 text-xs font-semibold">
+                          {c._count.posts} posts
+                        </span>
+                      </td>
                     </tr>
                   );
                 })}
@@ -488,11 +516,14 @@ export default function AdminCompanyDetailPage() {
               return (
                 <li
                   key={s.id ?? `${s.clientId}-${s.platformCode}-${s.username ?? s.accountName}`}
-                  className="rounded-xl border border-white/10 px-3 py-2"
+                  className="flex flex-wrap items-center gap-2 rounded-xl border border-white/10 px-3 py-2"
                 >
+                  <SocialPlatformIcon code={s.platformCode} className="h-5 w-5" />
                   <strong>{s.platformCode}</strong> · {s.accountName || s.username || "—"} · {s.status}
                   {clientName ? (
-                    <span className="text-content-muted"> · {clientName}</span>
+                    <span className="rounded-md bg-brand-primary/15 px-2 py-0.5 text-xs font-semibold text-brand-primary">
+                      Client: {clientName}
+                    </span>
                   ) : null}
                 </li>
               );
@@ -500,6 +531,73 @@ export default function AdminCompanyDetailPage() {
           </ul>
         ) : (
           <p className="text-sm text-content-muted">No social accounts connected.</p>
+        )}
+      </section>
+
+      <section className="panel mt-4 p-5">
+        <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
+          <div>
+            <h2 className="font-display text-lg font-semibold">Posts by client</h2>
+            <p className="text-xs text-content-muted">
+              Recent activity across all clients ({data?.recentPosts?.length ?? 0} shown)
+            </p>
+          </div>
+        </div>
+        {data?.recentPosts?.length ? (
+          <div className="space-y-3">
+            {data.recentPosts.map((p) => (
+              <article key={p.id} className="rounded-xl border border-white/10 bg-ink-elevated p-4">
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-brand-primary">
+                      {p.client.name}
+                    </p>
+                    <p className="mt-1 whitespace-pre-wrap text-sm">{p.baseCaption || "(No caption)"}</p>
+                    <p className="mt-2 text-[11px] text-content-muted">
+                      Updated {new Date(p.updatedAt).toLocaleString()}
+                      {p.scheduledAt ? ` · Scheduled ${new Date(p.scheduledAt).toLocaleString()}` : ""}
+                    </p>
+                  </div>
+                  <span className="rounded-lg bg-white/5 px-2 py-1 text-[10px] font-bold uppercase">
+                    {p.status}
+                  </span>
+                </div>
+                <div className="mt-3 space-y-1.5 border-t border-white/10 pt-3">
+                  {p.targets.length ? (
+                    p.targets.map((t) => (
+                      <div
+                        key={`${p.id}-${t.platformCode}-${t.externalPostId ?? t.status}`}
+                        className="flex flex-wrap items-center gap-2 text-xs"
+                      >
+                        <SocialPlatformIcon code={t.platformCode} className="h-4 w-4" />
+                        <span className="font-medium">{t.platformCode}</span>
+                        <span className="rounded bg-white/5 px-1.5 py-0.5 uppercase">{t.status}</span>
+                        <span className="text-content-muted">
+                          {t.publishedAt
+                            ? `Published ${new Date(t.publishedAt).toLocaleString()}`
+                            : t.scheduledAt
+                              ? `Scheduled ${new Date(t.scheduledAt).toLocaleString()}`
+                              : "—"}
+                        </span>
+                        {t.externalPostId ? (
+                          <span className="font-mono text-[10px] text-content-muted">
+                            ID {t.externalPostId}
+                          </span>
+                        ) : null}
+                        {t.lastError ? (
+                          <span className="w-full text-brand-error">{t.lastError}</span>
+                        ) : null}
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-xs text-content-muted">No network targets</p>
+                  )}
+                </div>
+              </article>
+            ))}
+          </div>
+        ) : (
+          <p className="text-sm text-content-muted">No posts yet for this company.</p>
         )}
       </section>
     </AppShell>

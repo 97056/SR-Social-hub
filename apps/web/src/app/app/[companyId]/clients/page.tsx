@@ -406,7 +406,7 @@ export default function CompanyClientsPage() {
               </button>
             </div>
 
-            <div className="mt-5 grid max-h-[70vh] gap-3 overflow-y-auto sm:grid-cols-2">
+            <div className="mt-5 grid max-h-[min(70vh,36rem)] gap-3 overflow-y-auto overscroll-contain [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden sm:grid-cols-2">
               <label className="block sm:col-span-1">
                 <span className="field-label">Contact name</span>
                 <input

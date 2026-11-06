@@ -68,6 +68,7 @@ export function clientNav(clientId: string): NavItem[] {
     { href: `/client/${clientId}/dashboard`, label: "Client Dashboard", icon: "dashboard", color: "#00D2FF" },
     { href: `/client/${clientId}/social-accounts`, label: "Social Accounts", icon: "social", color: "#3DDC97" },
     { href: `/client/${clientId}/approvals`, label: "Content for Approval", icon: "approvals", color: "#FFB020" },
+    { href: `/client/${clientId}/posts`, label: "Posted content", icon: "posts", color: "#C026FF" },
     { href: `/client/${clientId}/settings`, label: "Profile and Settings", icon: "settings", color: "#9AA3B8" },
   ];
 }
