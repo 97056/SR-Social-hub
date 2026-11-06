@@ -170,7 +170,11 @@ export default function CompanyDashboardPage() {
             </p>
             {countdown?.isTrial ? (
               <p className="mt-2 text-xs text-[var(--muted)]">
-                Trial caps: 1 client · up to 2 social connections (paid plan unlocks full quotas).
+                Trial caps: {data?.company.plan?.clientQuota ?? "—"} client
+                {(data?.company.plan?.clientQuota ?? 0) === 1 ? "" : "s"} · up to{" "}
+                {data?.company.plan?.accountQuota ?? "—"} social connection
+                {(data?.company.plan?.accountQuota ?? 0) === 1 ? "" : "s"} (from Admin free trial;
+                paid plan unlocks catalog quotas).
               </p>
             ) : null}
             <div className="mt-3 flex flex-wrap gap-2 text-xs">

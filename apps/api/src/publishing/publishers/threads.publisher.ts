@@ -104,13 +104,20 @@ export class ThreadsPublisher implements PlatformPublisher {
   private async resolveUserId(payload: PublishPayload, version: string): Promise<string | null> {
     if (/^\d+$/.test(payload.externalAccountId)) return payload.externalAccountId;
 
-    const meUrl = new URL(`https://graph.threads.net/${version}/me`);
-    meUrl.searchParams.set("fields", "id,username");
-    meUrl.searchParams.set("access_token", payload.accessToken);
-    const res = await fetch(meUrl);
-    if (!res.ok) return null;
-    const json = (await res.json()) as { id?: string };
-    return json.id && /^\d+$/.test(json.id) ? json.id : null;
+    for (const base of [
+      `https://graph.threads.net/${version}/me`,
+      "https://graph.threads.net/v1.0/me",
+      "https://graph.threads.net/me",
+    ]) {
+      const meUrl = new URL(base);
+      meUrl.searchParams.set("fields", "id,username");
+      meUrl.searchParams.set("access_token", payload.accessToken);
+      const res = await fetch(meUrl);
+      if (!res.ok) continue;
+      const json = (await res.json()) as { id?: string; username?: string };
+      if (json.id && /^\d+$/.test(json.id)) return json.id;
+    }
+    return null;
   }
 
   private mapError(message: string, code?: number): PublishResult {

@@ -89,10 +89,12 @@ export class EntitlementsService {
 
     let clientLimit = (plan?.clientQuota ?? 0) + addonSeats;
     let accountLimit = plan?.accountQuota ?? 0;
+    // During free trial, Admin → Free trial settings are the source of truth
+    // (do not clamp to paid plan quotas — admin may set trial socials above Starter).
     if (isTrialing) {
-      clientLimit = Math.min(Math.max(clientLimit, 1), trialClientCap);
-      accountLimit = Math.min(Math.max(accountLimit, 1), trialAccountCap);
-      maxSocialNetworks = Math.min(maxSocialNetworks, trialNetworkCap);
+      clientLimit = trialClientCap + addonSeats;
+      accountLimit = trialAccountCap;
+      maxSocialNetworks = trialNetworkCap;
     }
     const networksUsed = networkGroups.length;
     const teamLimit = plan?.teamQuota ?? 0;
@@ -179,7 +181,9 @@ export class EntitlementsService {
     if (e.quotas.clients.remaining <= 0) {
       const trialHint =
         e.subscriptionStatus === "TRIALING" || e.companyStatus === "TRIAL"
-          ? " Free trial allows 1 client only — upgrade to add more."
+          ? ` Free trial allows ${e.quotas.clients.limit} client${
+              e.quotas.clients.limit === 1 ? "" : "s"
+            } — upgrade or ask admin to raise trial limits.`
           : "";
       throw new ForbiddenException(`Client quota exceeded for current plan.${trialHint}`);
     }
@@ -190,7 +194,9 @@ export class EntitlementsService {
     if (e.quotas.accounts.remaining <= 0) {
       const hint =
         e.subscriptionStatus === "TRIALING" || e.companyStatus === "TRIAL"
-          ? " Trial allows up to 2 social connections. Starter unlocks any 3; Growth unlocks all networks."
+          ? ` Trial allows up to ${e.quotas.accounts.limit} social connection${
+              e.quotas.accounts.limit === 1 ? "" : "s"
+            }. Upgrade or ask admin to raise trial limits.`
           : e.planCode === "STARTER"
             ? " Starter includes any 3 social networks. Upgrade to Growth for all networks."
             : "";

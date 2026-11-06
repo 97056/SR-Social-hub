@@ -31,9 +31,11 @@ type AccountRow = {
   platformCode: string;
   accountName: string | null;
   username: string | null;
+  externalAccountId?: string | null;
   status: string;
   connectionMode: string;
   tokenExpiresAt: string | null;
+  needsReconnect?: boolean;
 };
 
 type Payload = {
@@ -267,11 +269,31 @@ export default function CompanySocialAccountsPage() {
                     <p className="font-medium text-[var(--text)]">
                       {account.accountName ?? platform.name}
                     </p>
-                    <p className="text-xs text-[var(--muted)]">@{account.username ?? "—"}</p>
+                    <p className="mt-1 text-sm font-semibold text-brand-primary">
+                      @
+                      {account.username && !/_live_[a-f0-9]+$/i.test(account.username)
+                        ? account.username
+                        : "unknown — reconnect"}
+                    </p>
+                    <p className="mt-1 text-[11px] text-[var(--muted)]">
+                      Account ID:{" "}
+                      <span className="font-mono text-[var(--text)]">
+                        {account.externalAccountId &&
+                        !/_live_[a-f0-9]+$/i.test(account.externalAccountId)
+                          ? account.externalAccountId
+                          : "invalid — reconnect required"}
+                      </span>
+                    </p>
                     <p className="mt-1 text-[11px] uppercase tracking-wide text-[var(--muted)]">
                       {account.connectionMode === "live" ? "Real account" : "Demo account"} ·{" "}
                       {account.status}
                     </p>
+                    {account.needsReconnect ? (
+                      <p className="mt-2 text-xs text-brand-error">
+                        Profile details incomplete. Disconnect, then Connect again so we store the
+                        real @{platform.name} username.
+                      </p>
+                    ) : null}
                     <div className="mt-2 flex flex-wrap gap-2">
                       <button
                         type="button"

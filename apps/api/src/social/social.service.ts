@@ -155,10 +155,15 @@ export class SocialService {
         platformCode: a.platformCode,
         accountName: a.accountName,
         username: a.username,
+        externalAccountId: a.externalAccountId,
         status: a.status,
         connectionMode: a.connectionMode,
         tokenExpiresAt: a.tokenExpiresAt,
         lastSyncedAt: a.lastSyncedAt,
+        needsReconnect:
+          !a.externalAccountId ||
+          /_live_[a-f0-9]+$/i.test(a.externalAccountId) ||
+          /_live_[a-f0-9]+$/i.test(a.username ?? ""),
       })),
     };
   }

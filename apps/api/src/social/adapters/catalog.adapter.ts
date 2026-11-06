@@ -157,6 +157,15 @@ export class CatalogSocialAdapter implements SocialAdapter {
     const profile = await this.fetchLiveProfile(json.access_token);
     const accessToken = profile.accessToken || json.access_token;
     const suffix = createHash("sha256").update(accessToken).digest("hex").slice(0, 8);
+    const requiresRealProfile =
+      this.entry.code === "THREADS" ||
+      this.entry.code === "INSTAGRAM" ||
+      this.entry.code === "FACEBOOK";
+    if (requiresRealProfile && !profile.externalAccountId) {
+      throw new Error(
+        `${this.displayName} connected but profile lookup failed. Check app permissions / Live mode, then reconnect.`,
+      );
+    }
     return {
       accessToken,
       refreshToken: json.refresh_token ?? null,
@@ -165,7 +174,7 @@ export class CatalogSocialAdapter implements SocialAdapter {
       scopes,
       externalAccountId: profile.externalAccountId || `${this.entry.mockPrefix}_live_${suffix}`,
       accountName: profile.accountName || `${this.displayName} Connected Account`,
-      username: profile.username || `${this.entry.mockPrefix}_live_${suffix}`,
+      username: profile.username || profile.externalAccountId || `${this.entry.mockPrefix}_live_${suffix}`,
       pageIdentifier: profile.pageIdentifier || profile.externalAccountId || `${this.entry.mockPrefix}_live_${suffix}`,
       capabilities: this.getCapabilities(),
       mode: "live",
@@ -255,24 +264,33 @@ export class CatalogSocialAdapter implements SocialAdapter {
       }
 
       if (this.entry.code === "THREADS") {
-        const meUrl = new URL("https://graph.threads.net/v1.0/me");
-        meUrl.searchParams.set("fields", "id,username,name,threads_profile_picture_url");
-        meUrl.searchParams.set("access_token", accessToken);
-        const meRes = await fetch(meUrl);
-        if (!meRes.ok) return {};
-        const me = (await meRes.json()) as {
-          id?: string;
-          username?: string;
-          name?: string;
-        };
-        if (!me.id) return {};
-        return {
-          externalAccountId: me.id,
-          accountName: me.name || me.username || "Threads Profile",
-          username: me.username || null,
-          pageIdentifier: me.id,
-          rawMeta: { threadsUserId: me.id },
-        };
+        // Prefer Threads Graph; fall back to Facebook Graph debug if token is Meta-shared.
+        const attempts = [
+          "https://graph.threads.net/v1.0/me",
+          "https://graph.threads.net/me",
+        ];
+        for (const base of attempts) {
+          const meUrl = new URL(base);
+          meUrl.searchParams.set("fields", "id,username,name,threads_profile_picture_url");
+          meUrl.searchParams.set("access_token", accessToken);
+          const meRes = await fetch(meUrl);
+          if (!meRes.ok) continue;
+          const me = (await meRes.json()) as {
+            id?: string;
+            username?: string;
+            name?: string;
+            error?: { message?: string };
+          };
+          if (me.error || !me.id) continue;
+          return {
+            externalAccountId: me.id,
+            accountName: me.name || (me.username ? `@${me.username}` : "Threads Profile"),
+            username: me.username || me.id,
+            pageIdentifier: me.id,
+            rawMeta: { threadsUserId: me.id, profileSource: base },
+          };
+        }
+        return {};
       }
     } catch {
       return {};
