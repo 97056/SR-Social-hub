@@ -28,6 +28,12 @@ export class BillingController {
     return this.billing.listPublicPlans();
   }
 
+  /** Public pricing for landing page — mirrors Admin → Plans / Free trial. */
+  @Get("public/pricing")
+  publicPricing() {
+    return this.billing.getPublicPricing();
+  }
+
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, CompanyAccessGuard)
   @Get("companies/:companyId/billing")

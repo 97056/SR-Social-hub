@@ -4,6 +4,7 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { AppShell } from "@/components/shell";
 import { toast } from "@/components/toast";
+import { fileToBrandLogoDataUrl } from "@/lib/brand-logo";
 import { apiFetch, getToken } from "@/lib/api";
 import { companyNav } from "@/lib/nav";
 import { fieldErrorClass, isEmail, isIndianMobile } from "@/lib/validate";
@@ -24,6 +25,7 @@ type ClientRow = {
   contactEmail: string | null;
   contactPhone: string | null;
   website: string | null;
+  logoUrl?: string | null;
   postCount?: number;
   memberCount?: number;
   socials?: SocialLink[];
@@ -52,6 +54,7 @@ const emptyForm = {
   website: "",
   businessName: "",
   noWebsite: false,
+  logoUrl: "" as string,
 };
 
 export default function CompanyClientsPage() {
@@ -66,6 +69,7 @@ export default function CompanyClientsPage() {
   const [form, setForm] = useState(emptyForm);
   const [fieldErrors, setFieldErrors] = useState<Record<string, boolean>>({});
   const [query, setQuery] = useState("");
+  const [logoBusyId, setLogoBusyId] = useState<string | null>(null);
 
   async function load() {
     setData(await apiFetch<Workspace>(`/companies/${companyId}/workspace`));
@@ -144,6 +148,7 @@ export default function CompanyClientsPage() {
             description,
             website: website || undefined,
             businessName: businessName || undefined,
+            logoUrl: form.logoUrl || undefined,
           }),
         },
       );
@@ -165,6 +170,28 @@ export default function CompanyClientsPage() {
       toast.error("Could not add client", msg);
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function onLogoFile(file: File | null, clientId?: string) {
+    if (!file) return;
+    try {
+      const logoUrl = await fileToBrandLogoDataUrl(file, 512);
+      if (clientId) {
+        setLogoBusyId(clientId);
+        await apiFetch(`/clients/${clientId}`, {
+          method: "PATCH",
+          body: JSON.stringify({ logoUrl }),
+        });
+        await load();
+        toast.success("Brand logo saved", "Recommended size 512×512 applied.");
+      } else {
+        setForm((f) => ({ ...f, logoUrl }));
+      }
+    } catch (err) {
+      toast.error("Logo upload failed", err instanceof Error ? err.message : "Could not read image");
+    } finally {
+      setLogoBusyId(null);
     }
   }
 
@@ -228,8 +255,13 @@ export default function CompanyClientsPage() {
               {clients.map((c) => (
                 <tr key={c.id} className="border-b border-[var(--border)] last:border-0">
                   <td className="px-4 py-3">
-                    <p className="font-medium text-[var(--text)]">{c.name}</p>
-                    <p className="text-xs text-[var(--muted)]">{c.industry || "—"}</p>
+                    <div className="flex items-center gap-3">
+                      <ClientLogoMark name={c.name} logoUrl={c.logoUrl} />
+                      <div>
+                        <p className="font-medium text-[var(--text)]">{c.name}</p>
+                        <p className="text-xs text-[var(--muted)]">{c.industry || "—"}</p>
+                      </div>
+                    </div>
                   </td>
                   <td className="px-4 py-3 text-[var(--muted)]">
                     <p>{c.contactEmail || "—"}</p>
@@ -240,13 +272,25 @@ export default function CompanyClientsPage() {
                   </td>
                   <td className="px-4 py-3 text-xs text-[var(--muted)]">{c.approvalWorkflow}</td>
                   <td className="px-4 py-3">
-                    <button
-                      type="button"
-                      className="text-xs font-semibold text-brand-primary"
-                      onClick={() => router.push(`/client/${c.id}/dashboard`)}
-                    >
-                      Open workspace
-                    </button>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <label className="cursor-pointer text-xs font-semibold text-[var(--muted)] hover:text-brand-primary">
+                        {logoBusyId === c.id ? "Saving…" : "Brand logo"}
+                        <input
+                          type="file"
+                          accept="image/png,image/jpeg,image/webp"
+                          className="hidden"
+                          disabled={logoBusyId === c.id}
+                          onChange={(e) => onLogoFile(e.target.files?.[0] ?? null, c.id)}
+                        />
+                      </label>
+                      <button
+                        type="button"
+                        className="text-xs font-semibold text-brand-primary"
+                        onClick={() => router.push(`/client/${c.id}/dashboard`)}
+                      >
+                        Open workspace
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -273,12 +317,7 @@ export default function CompanyClientsPage() {
             >
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <span
-                    className="mb-3 grid h-11 w-11 place-items-center rounded-xl text-sm font-bold text-white"
-                    style={{ background: "#7B5CFF" }}
-                  >
-                    {c.name.slice(0, 1).toUpperCase()}
-                  </span>
+                  <ClientLogoMark name={c.name} logoUrl={c.logoUrl} className="mb-3" />
                   <h3 className="font-display text-lg font-semibold text-[var(--text)]">{c.name}</h3>
                   <p className="mt-1 text-xs text-[var(--muted)]">{c.industry || "Organization"}</p>
                 </div>
@@ -306,13 +345,25 @@ export default function CompanyClientsPage() {
                 <SocialChips socials={c.socials} />
               </div>
 
-              <button
-                type="button"
-                className="btn-primary mt-5 w-full"
-                onClick={() => router.push(`/client/${c.id}/dashboard`)}
-              >
-                Open workspace
-              </button>
+              <div className="mt-5 flex flex-col gap-2">
+                <label className="btn-ghost cursor-pointer text-center text-xs">
+                  {logoBusyId === c.id ? "Saving logo…" : c.logoUrl ? "Replace brand logo" : "Add brand logo"}
+                  <input
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp"
+                    className="hidden"
+                    disabled={logoBusyId === c.id}
+                    onChange={(e) => onLogoFile(e.target.files?.[0] ?? null, c.id)}
+                  />
+                </label>
+                <button
+                  type="button"
+                  className="btn-primary w-full"
+                  onClick={() => router.push(`/client/${c.id}/dashboard`)}
+                >
+                  Open workspace
+                </button>
+              </div>
             </article>
           ))}
           {!clients.length ? (
@@ -486,6 +537,36 @@ export default function CompanyClientsPage() {
                   />
                 </label>
               )}
+
+              <div className="sm:col-span-2 rounded-xl border border-[var(--border)] bg-[var(--elevated)] p-3">
+                <div className="flex flex-wrap items-center gap-3">
+                  <ClientLogoMark name={form.organizationName || "C"} logoUrl={form.logoUrl || null} />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-semibold text-[var(--text)]">Client brand logo</p>
+                    <p className="text-xs text-[var(--muted)]">
+                      Recommended size: 512×512 PNG or JPG (square). We auto-crop to that size.
+                    </p>
+                    <label className="mt-2 inline-flex cursor-pointer text-xs font-semibold text-brand-primary">
+                      {form.logoUrl ? "Replace logo" : "Upload logo"}
+                      <input
+                        type="file"
+                        accept="image/png,image/jpeg,image/webp"
+                        className="hidden"
+                        onChange={(e) => onLogoFile(e.target.files?.[0] ?? null)}
+                      />
+                    </label>
+                    {form.logoUrl ? (
+                      <button
+                        type="button"
+                        className="ml-3 text-xs text-[var(--muted)] hover:text-brand-error"
+                        onClick={() => setForm((f) => ({ ...f, logoUrl: "" }))}
+                      >
+                        Remove
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
             </div>
 
             <div className="mt-5 flex flex-wrap justify-end gap-2">
@@ -500,6 +581,35 @@ export default function CompanyClientsPage() {
         </div>
       ) : null}
     </AppShell>
+  );
+}
+
+function ClientLogoMark({
+  name,
+  logoUrl,
+  className = "",
+}: {
+  name: string;
+  logoUrl?: string | null;
+  className?: string;
+}) {
+  if (logoUrl) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img
+        src={logoUrl}
+        alt={`${name} logo`}
+        className={`h-11 w-11 rounded-xl object-cover ring-1 ring-white/10 ${className}`}
+      />
+    );
+  }
+  return (
+    <span
+      className={`grid h-11 w-11 place-items-center rounded-xl text-sm font-bold text-white ${className}`}
+      style={{ background: "#7B5CFF" }}
+    >
+      {name.slice(0, 1).toUpperCase()}
+    </span>
   );
 }
 

@@ -74,6 +74,14 @@ export class CreateClientDto {
   @IsString()
   brandVoice?: string;
 
+  @ApiPropertyOptional({
+    description: "Client brand logo as a public URL or data URL (recommended 512×512)",
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(2_500_000)
+  logoUrl?: string;
+
   /** @deprecated Prefer organizationName — kept for older callers */
   @ApiPropertyOptional()
   @IsOptional()

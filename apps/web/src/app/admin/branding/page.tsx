@@ -20,7 +20,7 @@ type Branding = {
 
 const ASSET_HINTS = [
   { path: "/brand/logo.png", label: "Primary logo (neon) — landing hero & nav" },
-  { path: "/brand/logo-mark.png", label: "Square mark 1024 — about / legal headers" },
+  { path: "/brand/logo-mark.png", label: "Profile / square mark — recommended 512×512 PNG" },
   { path: "/brand/favicon.png", label: "Favicon — browser tab icon" },
 ];
 

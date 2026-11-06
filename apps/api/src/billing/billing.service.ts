@@ -29,6 +29,28 @@ export class BillingService {
     });
   }
 
+  /** Landing + billing catalog: active plans + free-trial settings from Admin. */
+  async getPublicPricing() {
+    const [plans, systemRow] = await Promise.all([
+      this.listPublicPlans(),
+      this.prisma.systemSetting.findUnique({ where: { key: "system" } }),
+    ]);
+    const system = (systemRow?.value ?? {}) as {
+      trialDays?: number;
+      trialClientQuota?: number;
+      trialAccountQuota?: number;
+    };
+    return {
+      trial: {
+        days: Math.max(1, Number(system.trialDays ?? 7)),
+        clientQuota: Math.max(1, Number(system.trialClientQuota ?? 1)),
+        accountQuota: Math.max(1, Number(system.trialAccountQuota ?? 2)),
+        priceInr: 0,
+      },
+      plans,
+    };
+  }
+
   async getCompanyBilling(companyId: string, user: AuthUser) {
     await this.assertCompanyAccess(companyId, user);
     const entitlements = await this.entitlements.getEntitlements(companyId);

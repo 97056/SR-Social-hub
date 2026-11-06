@@ -114,6 +114,7 @@ export class ClientsService {
             contactPhone: mobile,
             timezone: dto.timezone ?? company.timezone,
             brandVoice: description || null,
+            logoUrl: dto.logoUrl?.trim() || null,
           },
         });
 

@@ -3,6 +3,7 @@ import Link from "next/link";
 import { ContactForm } from "@/components/contact-form";
 import { SiteFooter, SiteHeader } from "@/components/site-chrome";
 import { fetchPublicBranding } from "@/lib/branding";
+import { buildLandingPlanCards, fetchPublicPricing } from "@/lib/pricing";
 
 const socialNetworks = [
   { name: "Facebook", color: "#1877F2", short: "f" },
@@ -92,8 +93,8 @@ const features = [
   {
     icon: "gift",
     color: "#F0C14A",
-    title: "7-day free trial to feel the speed",
-    body: "Start free for 7 days with 1 client profile. Prove the approval + publish flow, then pick a plan that matches your roster.",
+    title: "Free trial to feel the speed",
+    body: "Start free with a trial client profile. Prove the approval + publish flow, then pick a plan that matches your roster.",
   },
   {
     icon: "chart",
@@ -223,81 +224,6 @@ function FeatureIcon({ name, className = "h-5 w-5" }: { name: string; className?
   }
 }
 
-const plans = [
-  {
-    name: "Free trial",
-    price: "₹0",
-    detail: "7 days · 1 client",
-    blurb: "Taste the full approval → publish loop before you commit.",
-    perks: [
-      "1 client profile only",
-      "Up to 2 social connections",
-      "Client approvals on-platform",
-      "Compose + publish during trial",
-    ],
-    highlight: false,
-    badge: "Start here",
-  },
-  {
-    name: "Starter",
-    price: "₹499",
-    detail: "3 clients · any 3 socials",
-    blurb: "Lean teams who need speed without opening every network yet.",
-    perks: [
-      "3 client profiles",
-      "Any 3 social networks",
-      "Client approvals + feedback",
-      "Multi-network compose & schedule",
-      "Basic publishing pulse",
-    ],
-    highlight: false,
-    badge: null,
-  },
-  {
-    name: "Growth",
-    price: "₹999",
-    detail: "6 clients · everything unlocked",
-    blurb: "Full platform — all networks, approvals, analytics, and room to scale.",
-    perks: [
-      "6 client profiles",
-      "All 7 social networks",
-      "Full client approval workflow",
-      "Unlimited publish across connected accounts*",
-      "Full analytics pulse + media library",
-    ],
-    highlight: true,
-    badge: "Most popular",
-  },
-  {
-    name: "Agency Pro",
-    price: "₹1,499",
-    detail: "9 clients · everything +",
-    blurb: "Same full unlock as Growth with more client seats for busy rosters.",
-    perks: [
-      "9 client profiles",
-      "All 7 social networks",
-      "Everything in Growth",
-      "Higher team & storage quotas",
-    ],
-    highlight: false,
-    badge: null,
-  },
-  {
-    name: "Custom",
-    price: "Let's talk",
-    detail: "Negotiate quota",
-    blurb: "Larger agencies — seats, socials, and limits tailored with us.",
-    perks: [
-      "Client seats by agreement",
-      "All networks available",
-      "Everything unlocked",
-      "Priority onboarding help",
-    ],
-    highlight: false,
-    badge: null,
-  },
-];
-
 const highlightCards = [
   {
     icon: "bolt",
@@ -320,13 +246,20 @@ const highlightCards = [
   {
     icon: "gift",
     color: "#F0C14A",
-    title: "7-day free trial",
-    body: "1 client profile to prove the flow before you pay.",
+    title: "Free trial",
+    body: "Prove the approval → publish loop before you pay.",
   },
 ];
 
 export default async function HomePage() {
-  const brand = await fetchPublicBranding();
+  const [brand, pricing] = await Promise.all([fetchPublicBranding(), fetchPublicPricing()]);
+  const plans = buildLandingPlanCards(pricing);
+  const trial = pricing.trial;
+  const paidHint = plans
+    .filter((p) => p.name !== "Free trial")
+    .slice(0, 3)
+    .map((p) => `${p.name}${p.price.startsWith("₹") ? ` (${p.price})` : ""}`)
+    .join("; ");
 
   return (
     <main className="landing relative overflow-x-hidden">
@@ -565,9 +498,11 @@ export default async function HomePage() {
             Start free. Unlock networks as you grow.
           </h2>
           <p className="mt-4 text-base leading-7 text-content-muted">
-            7-day trial with 1 client. Starter opens any 3 socials. Growth (₹999) unlocks the full
-            platform — every network and feature. Agency Pro adds more seats; Custom is by
-            negotiation.
+            {trial.days}-day trial with {trial.clientQuota} client
+            {trial.clientQuota === 1 ? "" : "s"} and up to {trial.accountQuota} social
+            {trial.accountQuota === 1 ? "" : "s"}.
+            {paidHint ? ` ${paidHint}.` : " Paid plans unlock full quotas."} Prices update from
+            Admin → Subscription plans.
           </p>
         </div>
         <div className="mt-12 grid gap-5 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5">

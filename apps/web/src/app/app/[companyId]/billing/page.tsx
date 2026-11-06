@@ -12,7 +12,13 @@ type Plan = {
   monthlyPriceInr: number;
   yearlyPriceInr: number | null;
   clientQuota: number;
+  accountQuota?: number;
   isCustom: boolean;
+};
+
+type PublicPricing = {
+  trial: { days: number; clientQuota: number; accountQuota: number; priceInr: number };
+  plans: Plan[];
 };
 
 type BillingPayload = {
@@ -66,6 +72,7 @@ export default function CompanyBillingPage() {
   const companyId = params.companyId;
   const [billing, setBilling] = useState<BillingPayload | null>(null);
   const [plans, setPlans] = useState<Plan[]>([]);
+  const [trial, setTrial] = useState<PublicPricing["trial"] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -75,11 +82,12 @@ export default function CompanyBillingPage() {
     }
     Promise.all([
       apiFetch<BillingPayload>(`/companies/${companyId}/billing`),
-      apiFetch<Plan[]>("/billing/plans"),
+      apiFetch<PublicPricing>("/public/pricing"),
     ])
-      .then(([b, p]) => {
+      .then(([b, pricing]) => {
         setBilling(b);
-        setPlans(p);
+        setPlans(pricing.plans ?? []);
+        setTrial(pricing.trial ?? null);
       })
       .catch((e: Error) => setError(e.message));
   }, [companyId, router]);
@@ -119,8 +127,20 @@ export default function CompanyBillingPage() {
       ) : null}
 
       <section className="mb-8">
-        <h2 className="mb-3 font-display text-xl font-semibold">Catalog (reference)</h2>
+        <h2 className="mb-3 font-display text-xl font-semibold">Catalog (live from admin)</h2>
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          {trial ? (
+            <div className="panel p-5">
+              <p className="text-[11px] uppercase tracking-[0.18em] text-content-muted">FREE TRIAL</p>
+              <h3 className="mt-2 font-display text-lg font-semibold">Free trial</h3>
+              <p className="mt-3 font-display text-2xl font-semibold">₹0</p>
+              <p className="mt-2 text-sm text-content-muted">
+                {trial.days} days · {trial.clientQuota} client
+                {trial.clientQuota === 1 ? "" : "s"} · {trial.accountQuota} social
+                {trial.accountQuota === 1 ? "" : "s"}
+              </p>
+            </div>
+          ) : null}
           {plans.map((plan) => {
             const current = e?.planCode === plan.code;
             return (
@@ -141,7 +161,7 @@ export default function CompanyBillingPage() {
                 <p className="mt-2 text-sm text-content-muted">
                   {plan.isCustom
                     ? "Custom client seats"
-                    : `${plan.clientQuota} client profiles included`}
+                    : `${plan.clientQuota} client profiles · ${plan.accountQuota ?? "—"} socials`}
                 </p>
                 {current ? (
                   <p className="mt-4 text-xs font-semibold text-brand-secondary">Current plan</p>

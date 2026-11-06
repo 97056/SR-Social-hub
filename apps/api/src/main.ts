@@ -2,11 +2,23 @@ import { ValidationPipe } from "@nestjs/common";
 import { NestFactory } from "@nestjs/core";
 import { DocumentBuilder, SwaggerModule } from "@nestjs/swagger";
 import cookieParser from "cookie-parser";
+import { json, urlencoded } from "express";
 import helmet from "helmet";
 import { AppModule } from "./app.module";
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule, { rawBody: true });
+  const app = await NestFactory.create(AppModule, { rawBody: true, bodyParser: false });
+
+  // Allow brand-logo data URLs (resized 512×512) in JSON bodies.
+  app.use(
+    json({
+      limit: "3mb",
+      verify: (req, _res, buf) => {
+        (req as { rawBody?: Buffer }).rawBody = buf;
+      },
+    }),
+  );
+  app.use(urlencoded({ extended: true, limit: "3mb" }));
 
   app.use(helmet());
   app.use(cookieParser());
