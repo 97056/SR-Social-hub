@@ -327,14 +327,16 @@ export default function CompanyDashboardPage() {
                             borderColor: meta.color,
                             opacity: s.status === "CONNECTED" ? 1 : 0.65,
                           }}
-                          title={s.accountName || s.username || meta.label}
+                          title={s.username ? `@${s.username}` : s.accountName || meta.label}
                         >
                           {meta.label}
-                          {(s.username || s.accountName) && (
+                          {s.username ? (
+                            <span className="font-normal opacity-90">· @{s.username.slice(0, 20)}</span>
+                          ) : s.accountName ? (
                             <span className="font-normal opacity-90">
-                              · {(s.username || s.accountName || "").slice(0, 18)}
+                              · {s.accountName.slice(0, 18)}
                             </span>
-                          )}
+                          ) : null}
                         </span>
                       );
                     })
