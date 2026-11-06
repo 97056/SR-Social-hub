@@ -55,6 +55,7 @@ export class CatalogSocialAdapter implements SocialAdapter {
       scopes: params.scopes,
       state: params.state,
       apiVersion: params.apiVersion,
+      configId: params.configId,
     });
   }
 

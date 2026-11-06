@@ -1,5 +1,6 @@
 import { SocialPlatformCode } from "@prisma/client";
 import { createHash, randomBytes } from "crypto";
+import { buildFacebookDialogAuthorizeUrl } from "./meta-oauth";
 import type {
   AdapterAuthMode,
   AdapterCapabilities,
@@ -50,15 +51,14 @@ export class FacebookAdapter implements SocialAdapter {
       return `${base}/api/v1/oauth/callback?${q.toString()}`;
     }
 
-    const version = params.apiVersion || "v21.0";
-    const q = new URLSearchParams({
-      client_id: params.clientId,
-      redirect_uri: params.redirectUri,
+    return buildFacebookDialogAuthorizeUrl({
+      clientId: params.clientId,
+      redirectUri: params.redirectUri,
       state: params.state,
-      response_type: "code",
-      scope: params.scopes.join(","),
+      scopes: params.scopes,
+      apiVersion: params.apiVersion,
+      configId: params.configId,
     });
-    return `https://www.facebook.com/${version}/dialog/oauth?${q.toString()}`;
   }
 
   async exchangeCode(input: {

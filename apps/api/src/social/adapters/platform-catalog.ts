@@ -1,4 +1,5 @@
 import { SocialPlatformCode } from "@prisma/client";
+import { buildFacebookDialogAuthorizeUrl } from "./meta-oauth";
 import type { AdapterCapabilities } from "./social-adapter";
 
 export type PlatformCatalogEntry = {
@@ -14,6 +15,7 @@ export type PlatformCatalogEntry = {
     scopes: string[];
     state: string;
     apiVersion?: string | null;
+    configId?: string | null;
   }) => string;
   /** Optional live token exchange. When omitted, live mode falls back with a clear error. */
   liveTokenUrl?: string;
@@ -40,17 +42,15 @@ export const PLATFORM_CATALOG: PlatformCatalogEntry[] = [
       assistedOnly: false,
       notes: "Requires Facebook Login + Instagram professional account linked to a Page.",
     },
-    liveAuthorizeUrl: ({ clientId, redirectUri, scopes, state, apiVersion }) => {
-      const version = apiVersion || "v21.0";
-      const q = new URLSearchParams({
-        client_id: clientId,
-        redirect_uri: redirectUri,
+    liveAuthorizeUrl: ({ clientId, redirectUri, scopes, state, apiVersion, configId }) =>
+      buildFacebookDialogAuthorizeUrl({
+        clientId,
+        redirectUri,
+        scopes,
         state,
-        response_type: "code",
-        scope: scopes.join(","),
-      });
-      return `https://www.facebook.com/${version}/dialog/oauth?${q.toString()}`;
-    },
+        apiVersion,
+        configId,
+      }),
     liveTokenUrl: "https://graph.facebook.com/v21.0/oauth/access_token",
   },
   {
@@ -179,6 +179,8 @@ export const PLATFORM_CATALOG: PlatformCatalogEntry[] = [
       assistedOnly: false,
       notes: "Uses Meta Threads API where officially available for the account type.",
     },
+    // Threads uses threads.net OAuth (not Facebook Login config_id).
+    // Redirect URI still resolves from the shared Meta callback / FACEBOOK_REDIRECT_URI.
     liveAuthorizeUrl: ({ clientId, redirectUri, scopes, state }) => {
       const q = new URLSearchParams({
         client_id: clientId,

@@ -302,6 +302,8 @@ model SocialAppConfig {
   oauthClientId        String?
   clientSecretEncrypted String?
   redirectUri          String?
+  /** Meta Login for Business configuration id (Facebook / Instagram / shared Meta apps). */
+  configId             String?
   scopes               String[] @default([])
   apiVersion           String?
   capabilities         Json     @default("{}")

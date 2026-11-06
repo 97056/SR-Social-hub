@@ -6,6 +6,9 @@ import { AppShell } from "@/components/shell";
 import { apiFetch, getToken } from "@/lib/api";
 import { adminNav } from "@/lib/nav";
 
+const META_CODES = new Set(["FACEBOOK", "INSTAGRAM", "THREADS"]);
+const DEFAULT_CALLBACK = `${process.env.NEXT_PUBLIC_API_URL ?? "https://api.srsocialhub.in"}/api/v1/oauth/callback`;
+
 type Integration = {
   id: string;
   code: string;
@@ -16,29 +19,36 @@ type Integration = {
     clientSecretMasked: string | null;
     hasClientSecret: boolean;
     redirectUri: string | null;
+    configId: string | null;
     scopes: string[];
     apiVersion: string | null;
   } | null;
 };
 
+type Draft = {
+  oauthClientId: string;
+  clientSecret: string;
+  redirectUri: string;
+  configId: string;
+};
+
 export default function AdminIntegrationsPage() {
   const router = useRouter();
   const [items, setItems] = useState<Integration[]>([]);
-  const [drafts, setDrafts] = useState<Record<string, { oauthClientId: string; clientSecret: string; redirectUri: string }>>({});
+  const [drafts, setDrafts] = useState<Record<string, Draft>>({});
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState<string | null>(null);
 
   async function load() {
     const list = await apiFetch<Integration[]>("/admin/integrations");
     setItems(list);
-    const next: typeof drafts = {};
+    const next: Record<string, Draft> = {};
     for (const item of list) {
       next[item.code] = {
         oauthClientId: item.config?.oauthClientId ?? "",
         clientSecret: "",
-        redirectUri:
-          item.config?.redirectUri ??
-          `${process.env.NEXT_PUBLIC_API_URL ?? "https://api.srsocialhub.in"}/api/v1/oauth/callback`,
+        redirectUri: item.config?.redirectUri ?? DEFAULT_CALLBACK,
+        configId: item.config?.configId ?? "",
       };
     }
     setDrafts(next);
@@ -69,18 +79,27 @@ export default function AdminIntegrationsPage() {
         oauthClientId: draft.oauthClientId || undefined,
         clientSecret: draft.clientSecret || undefined,
         redirectUri: draft.redirectUri || undefined,
+        configId: META_CODES.has(code) ? draft.configId || undefined : undefined,
       }),
     });
     setSaved(code);
     await load();
   }
 
+  function patchDraft(code: string, patch: Partial<Draft>) {
+    setDrafts((d) => ({
+      ...d,
+      [code]: { ...d[code], ...patch },
+    }));
+  }
+
   return (
     <AppShell title="Social integrations" subtitle="Super Admin" nav={adminNav()}>
       {error ? <p className="mb-4 text-sm text-brand-error">{error}</p> : null}
       <p className="mb-4 text-sm text-content-muted">
-        Secrets are encrypted at rest and masked after save. Enable a network for mock or live OAuth; live
-        auto-publish remains Facebook-first until each provider is certified.
+        Secrets are encrypted at rest and masked after save. For Facebook / Instagram, set the Meta Login
+        for Business configuration id so Live connect uses <code className="text-xs">config_id</code>.
+        Threads uses the same redirect callback; its authorize endpoint stays on threads.net.
       </p>
       <div className="grid gap-4 lg:grid-cols-2">
         {items.map((item) => (
@@ -103,12 +122,7 @@ export default function AdminIntegrationsPage() {
               className="w-full rounded-xl border border-white/10 bg-ink-elevated px-3 py-2 text-sm"
               placeholder="OAuth client ID"
               value={drafts[item.code]?.oauthClientId ?? ""}
-              onChange={(e) =>
-                setDrafts((d) => ({
-                  ...d,
-                  [item.code]: { ...d[item.code], oauthClientId: e.target.value },
-                }))
-              }
+              onChange={(e) => patchDraft(item.code, { oauthClientId: e.target.value })}
             />
             <input
               className="w-full rounded-xl border border-white/10 bg-ink-elevated px-3 py-2 text-sm"
@@ -119,24 +133,22 @@ export default function AdminIntegrationsPage() {
               }
               type="password"
               value={drafts[item.code]?.clientSecret ?? ""}
-              onChange={(e) =>
-                setDrafts((d) => ({
-                  ...d,
-                  [item.code]: { ...d[item.code], clientSecret: e.target.value },
-                }))
-              }
+              onChange={(e) => patchDraft(item.code, { clientSecret: e.target.value })}
             />
             <input
               className="w-full rounded-xl border border-white/10 bg-ink-elevated px-3 py-2 text-sm"
               placeholder="Redirect URI"
               value={drafts[item.code]?.redirectUri ?? ""}
-              onChange={(e) =>
-                setDrafts((d) => ({
-                  ...d,
-                  [item.code]: { ...d[item.code], redirectUri: e.target.value },
-                }))
-              }
+              onChange={(e) => patchDraft(item.code, { redirectUri: e.target.value })}
             />
+            {META_CODES.has(item.code) ? (
+              <input
+                className="w-full rounded-xl border border-white/10 bg-ink-elevated px-3 py-2 text-sm"
+                placeholder="Meta config_id (Login for Business)"
+                value={drafts[item.code]?.configId ?? ""}
+                onChange={(e) => patchDraft(item.code, { configId: e.target.value })}
+              />
+            ) : null}
             <button
               className="rounded-xl bg-brand-primary px-4 py-2 text-sm font-semibold text-white"
               onClick={() => save(item.code)}

@@ -230,6 +230,11 @@ export class UpdateIntegrationDto {
   @IsString()
   redirectUri?: string;
 
+  @ApiPropertyOptional({ description: "Meta Login for Business configuration id" })
+  @IsOptional()
+  @IsString()
+  configId?: string;
+
   @ApiPropertyOptional()
   @IsOptional()
   @IsArray()

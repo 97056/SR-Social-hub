@@ -17,6 +17,8 @@ export type AuthorizeParams = {
   scopes: string[];
   state: string;
   apiVersion?: string | null;
+  /** Meta Login for Business configuration id. */
+  configId?: string | null;
 };
 
 export type TokenExchangeResult = {

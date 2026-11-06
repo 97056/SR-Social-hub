@@ -11,6 +11,11 @@ import { decryptSecret, encryptSecret } from "../common/crypto.util";
 import { PrismaService } from "../prisma/prisma.service";
 import type { AuthUser } from "../auth/jwt.strategy";
 import { createAdapterRegistry } from "./adapters/adapter.registry";
+import {
+  META_LOGIN_PLATFORMS,
+  resolveMetaConfigId,
+  resolveMetaRedirectUri,
+} from "./adapters/meta-oauth";
 import type { SocialAdapter } from "./adapters/social-adapter";
 
 @Injectable()
@@ -230,13 +235,15 @@ export class SocialService {
       throw new BadRequestException(`${platform.name} adapter is not available yet`);
     }
 
-    const redirectUri =
-      platform.appConfig?.redirectUri ||
-      `${process.env.API_URL ?? "http://localhost:4000"}/api/v1/oauth/callback`;
+    const redirectUri = META_LOGIN_PLATFORMS.has(input.platformCode)
+      ? resolveMetaRedirectUri(platform.appConfig?.redirectUri)
+      : platform.appConfig?.redirectUri ||
+        `${process.env.API_URL ?? "http://localhost:4000"}/api/v1/oauth/callback`;
     const scopes =
       platform.appConfig?.scopes?.length
         ? platform.appConfig.scopes
         : adapter.getDefaultScopes();
+    const configId = resolveMetaConfigId(input.platformCode, platform.appConfig?.configId);
 
     const state = randomBytes(24).toString("hex");
     await this.prisma.oAuthState.create({
@@ -260,6 +267,7 @@ export class SocialService {
         scopes,
         state,
         apiVersion: platform.appConfig?.apiVersion,
+        configId,
       },
       mode,
     );
@@ -307,9 +315,10 @@ export class SocialService {
       platform.appConfig?.oauthClientId && platform.appConfig?.clientSecretEncrypted,
     );
     const mode = adapter.resolveMode(hasCredentials);
-    const redirectUri =
-      platform.appConfig?.redirectUri ||
-      `${process.env.API_URL ?? "http://localhost:4000"}/api/v1/oauth/callback`;
+    const redirectUri = META_LOGIN_PLATFORMS.has(oauthState.platformCode)
+      ? resolveMetaRedirectUri(platform.appConfig?.redirectUri)
+      : platform.appConfig?.redirectUri ||
+        `${process.env.API_URL ?? "http://localhost:4000"}/api/v1/oauth/callback`;
 
     const secret = platform.appConfig?.clientSecretEncrypted
       ? decryptSecret(platform.appConfig.clientSecretEncrypted)

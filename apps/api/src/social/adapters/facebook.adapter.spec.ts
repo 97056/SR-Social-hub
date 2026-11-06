@@ -44,5 +44,22 @@ describe("FacebookAdapter", () => {
     );
     expect(url).toContain("https://www.facebook.com/v21.0/dialog/oauth");
     expect(url).toContain("client_id=123");
+    expect(url).toContain("scope=pages_manage_posts");
+  });
+
+  it("uses config_id instead of scope for Login for Business", () => {
+    const url = adapter.buildAuthorizeUrl(
+      {
+        clientId: "123",
+        redirectUri: "https://api.srsocialhub.in/api/v1/oauth/callback",
+        scopes: ["pages_manage_posts"],
+        state: "s1",
+        apiVersion: "v21.0",
+        configId: "1154246043953710",
+      },
+      "live",
+    );
+    expect(url).toContain("config_id=1154246043953710");
+    expect(url).not.toContain("scope=");
   });
 });

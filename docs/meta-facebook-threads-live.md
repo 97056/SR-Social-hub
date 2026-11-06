@@ -21,7 +21,10 @@ Use this so **any customer** can connect (not testers).
    - Privacy: `https://srsocialhub.in/privacy`
    - Terms: `https://srsocialhub.in/terms`
 6. **App Review** → request and get approved the permissions you use (e.g. `pages_show_list`, `pages_manage_posts`, Instagram publish scopes).
-7. In SR Social Hub Admin → Integrations: save Facebook (and Instagram) Client ID/Secret, same redirect URI, enable platforms.
+7. Create a **Facebook Login for Business** configuration and copy its **config_id**.
+8. In SR Social Hub Admin → Integrations: save Facebook (and Instagram) Client ID/Secret, redirect URI
+   `https://api.srsocialhub.in/api/v1/oauth/callback`, the same **config_id**, and enable platforms.
+   (API also reads `FACEBOOK_CONFIG_ID` / `FACEBOOK_REDIRECT_URI` if admin fields are empty.)
 
 **Done when:** Connect Facebook shows the normal permission screen — not “App not active”.
 
