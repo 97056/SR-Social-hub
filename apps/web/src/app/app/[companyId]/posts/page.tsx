@@ -3,7 +3,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { AppShell } from "@/components/shell";
+import { AuthImage } from "@/components/auth-image";
 import { SocialPlatformIcon } from "@/components/social-platform-icon";
+import { StatusBadge } from "@/components/status-badge";
 import { toast } from "@/components/toast";
 import { apiFetch, getToken } from "@/lib/api";
 import { companyNav } from "@/lib/nav";
@@ -17,6 +19,7 @@ type Post = {
   updatedAt: string;
   createdAt?: string;
   client: { id: string; name: string };
+  mediaAsset?: { id: string; kind: string; originalName?: string } | null;
   targets: Array<{
     platformCode: string;
     status?: string;
@@ -167,29 +170,55 @@ export default function PostsPage() {
         {visible.map((p) => {
           const open = openId === p.id;
           return (
-            <article key={p.id} className="panel p-4">
+            <article key={p.id} className="panel overflow-hidden p-0">
               <button
                 type="button"
-                className="flex w-full flex-wrap items-start justify-between gap-3 text-left"
+                className={`flex w-full gap-3 p-4 text-left ${view === "grid" ? "flex-col" : "items-start"}`}
                 onClick={() => setOpenId(open ? null : p.id)}
               >
+                <div
+                  className={`shrink-0 overflow-hidden rounded-xl border border-white/10 bg-black/30 ${
+                    view === "grid" ? "w-full" : "w-24"
+                  }`}
+                >
+                  {p.mediaAsset?.kind === "IMAGE" ? (
+                    <AuthImage
+                      assetId={p.mediaAsset.id}
+                      alt={p.mediaAsset.originalName ?? "Post"}
+                      className="aspect-square w-full object-contain"
+                    />
+                  ) : (
+                    <div className="grid aspect-square place-items-center text-[10px] text-content-muted">
+                      {p.mediaAsset?.kind ?? "No img"}
+                    </div>
+                  )}
+                </div>
                 <div className="min-w-0 flex-1">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-brand-primary">
-                    {p.client.name}
-                  </p>
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-brand-primary">
+                      {p.client.name}
+                    </p>
+                    <StatusBadge status={p.status} />
+                  </div>
                   <p className="mt-1 line-clamp-3 text-sm font-medium">{p.baseCaption || "—"}</p>
                   <p className="mt-2 text-xs text-content-muted">
                     Updated {formatWhen(p.updatedAt)}
                     {p.scheduledAt ? ` · Scheduled ${formatWhen(p.scheduledAt)}` : ""}
                   </p>
                 </div>
-                <span className="rounded-lg bg-white/5 px-2 py-1 text-[10px] font-bold uppercase">
-                  {p.status}
-                </span>
               </button>
 
               {open ? (
-                <div className="mt-4 space-y-3 border-t border-[var(--border)] pt-3 text-sm">
+                <div className="space-y-3 border-t border-[var(--border)] p-4 text-sm">
+                  {p.mediaAsset?.kind === "IMAGE" ? (
+                    <div className="mx-auto max-w-sm overflow-hidden rounded-xl border border-white/10 bg-black/40">
+                      <AuthImage
+                        assetId={p.mediaAsset.id}
+                        alt={p.mediaAsset.originalName ?? "Post"}
+                        className="aspect-square w-full object-contain"
+                      />
+                    </div>
+                  ) : null}
                   {p.baseHashtags ? (
                     <p className="text-xs text-brand-primary">{p.baseHashtags}</p>
                   ) : null}
@@ -204,9 +233,7 @@ export default function PostsPage() {
                       >
                         <SocialPlatformIcon code={t.platformCode} className="h-5 w-5" />
                         <span className="font-medium">{t.platformCode}</span>
-                        <span className="rounded-md bg-white/5 px-1.5 py-0.5 text-[10px] uppercase">
-                          {t.status ?? "—"}
-                        </span>
+                        <StatusBadge status={t.status ?? "DRAFT"} />
                         <span className="text-xs text-content-muted">
                           {t.publishedAt
                             ? `Published ${formatWhen(t.publishedAt)}`
@@ -222,8 +249,8 @@ export default function PostsPage() {
                   ) : (
                     <p className="text-xs text-content-muted">No targets</p>
                   )}
-                  <p className="text-xs text-content-muted">
-                    Approval / workflow status: <strong className="text-[var(--text)]">{p.status}</strong>
+                  <p className="flex flex-wrap items-center gap-2 text-xs text-content-muted">
+                    Approval / workflow status: <StatusBadge status={p.status} />
                   </p>
                   {["APPROVED", "FAILED", "SCHEDULED"].includes(p.status) ? (
                     <button
@@ -236,7 +263,7 @@ export default function PostsPage() {
                   ) : null}
                 </div>
               ) : (
-                <div className="mt-3 flex flex-wrap gap-1">
+                <div className="flex flex-wrap gap-1 px-4 pb-4">
                   {p.targets.slice(0, 6).map((t) => (
                     <SocialPlatformIcon
                       key={`${p.id}-${t.platformCode}`}

@@ -3,8 +3,10 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
+import { AuthImage } from "@/components/auth-image";
 import { AppShell } from "@/components/shell";
 import { SocialPlatformIcon } from "@/components/social-platform-icon";
+import { StatusBadge } from "@/components/status-badge";
 import { apiFetch, getToken } from "@/lib/api";
 import { adminNav } from "@/lib/nav";
 
@@ -92,6 +94,7 @@ export default function AdminClientDetailPage() {
   const [data, setData] = useState<Detail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [openPost, setOpenPost] = useState<string | null>(null);
+  const [view, setView] = useState<"list" | "grid">("list");
 
   useEffect(() => {
     if (!getToken()) {
@@ -195,15 +198,7 @@ export default function AdminClientDetailPage() {
               <strong>{s.platformCode}</strong>
               <span>{s.accountName || s.username || "—"}</span>
               {s.username ? <span className="text-brand-primary">@{s.username}</span> : null}
-              <span
-                className={`rounded-md px-1.5 py-0.5 text-[10px] uppercase ${
-                  s.status === "CONNECTED"
-                    ? "bg-brand-success/15 text-brand-success"
-                    : "bg-white/5 text-content-muted"
-                }`}
-              >
-                {s.status}
-              </span>
+              <StatusBadge status={s.status} />
               <span className="text-xs text-content-muted">Connected {fmt(s.createdAt)}</span>
               {s.status !== "CONNECTED" ? (
                 <span className="text-xs text-content-muted">Updated / disconnected {fmt(s.updatedAt)}</span>
@@ -220,34 +215,87 @@ export default function AdminClientDetailPage() {
       </section>
 
       <section className="space-y-6">
-        <h2 className="font-display text-lg font-semibold">Posts by date</h2>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h2 className="font-display text-lg font-semibold">Posts by date</h2>
+          <div className="flex rounded-xl border border-white/10 p-0.5 text-xs">
+            <button
+              type="button"
+              className={`rounded-lg px-3 py-1.5 ${view === "list" ? "bg-white/10" : "text-content-muted"}`}
+              onClick={() => setView("list")}
+            >
+              List
+            </button>
+            <button
+              type="button"
+              className={`rounded-lg px-3 py-1.5 ${view === "grid" ? "bg-white/10" : "text-content-muted"}`}
+              onClick={() => setView("grid")}
+            >
+              Grid
+            </button>
+          </div>
+        </div>
         {grouped.map(([day, rows]) => (
           <div key={day}>
             <h3 className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-content-muted">
               {day}
             </h3>
-            <div className="space-y-3">
+            <div className={view === "grid" ? "grid gap-3 sm:grid-cols-2 xl:grid-cols-3" : "space-y-3"}>
               {rows.map((p) => (
-                <article key={p.id} className="panel p-4">
+                <article key={p.id} className="panel overflow-hidden p-0">
                   <button
                     type="button"
-                    className="flex w-full flex-wrap items-start justify-between gap-2 text-left"
+                    className={`flex w-full gap-3 p-4 text-left ${view === "grid" ? "flex-col" : "flex-row items-start"}`}
                     onClick={() => setOpenPost((id) => (id === p.id ? null : p.id))}
                   >
+                    <div
+                      className={`shrink-0 overflow-hidden rounded-xl border border-white/10 bg-black/30 ${
+                        view === "grid" ? "w-full" : "w-24"
+                      }`}
+                    >
+                      {p.mediaAsset?.kind === "IMAGE" ? (
+                        <AuthImage
+                          assetId={p.mediaAsset.id}
+                          alt={p.mediaAsset.originalName}
+                          className="aspect-square w-full object-contain"
+                        />
+                      ) : (
+                        <div className="grid aspect-square place-items-center text-[10px] text-content-muted">
+                          {p.mediaAsset?.kind ?? "No img"}
+                        </div>
+                      )}
+                    </div>
                     <div className="min-w-0 flex-1">
-                      <p className="font-medium line-clamp-2">{p.baseCaption || "(No caption)"}</p>
+                      <div className="flex flex-wrap items-start justify-between gap-2">
+                        <p className="font-medium line-clamp-2">{p.baseCaption || "(No caption)"}</p>
+                        <StatusBadge status={p.status} />
+                      </div>
                       <p className="mt-1 text-xs text-content-muted">
                         Updated {fmt(p.updatedAt)}
                         {p.scheduledAt ? ` · Scheduled ${fmt(p.scheduledAt)}` : ""}
                       </p>
+                      <div className="mt-2 flex flex-wrap gap-1">
+                        {p.targets.map((t) => (
+                          <SocialPlatformIcon
+                            key={`${p.id}-${t.platformCode}`}
+                            code={t.platformCode}
+                            className="h-4 w-4"
+                          />
+                        ))}
+                      </div>
                     </div>
-                    <span className="rounded-lg bg-white/5 px-2 py-1 text-[10px] font-bold uppercase">
-                      {p.status}
-                    </span>
                   </button>
 
                   {openPost === p.id ? (
-                    <div className="mt-4 space-y-3 border-t border-white/10 pt-3 text-sm">
+                    <div className="space-y-3 border-t border-white/10 p-4 text-sm">
+                      {p.mediaAsset?.kind === "IMAGE" ? (
+                        <div className="mx-auto max-w-sm overflow-hidden rounded-xl border border-white/10 bg-black/40">
+                          <AuthImage
+                            assetId={p.mediaAsset.id}
+                            alt={p.mediaAsset.originalName}
+                            className="aspect-square w-full object-contain"
+                          />
+                        </div>
+                      ) : null}
                       {p.baseHashtags ? (
                         <p className="text-xs text-brand-primary">{p.baseHashtags}</p>
                       ) : null}
@@ -268,9 +316,7 @@ export default function AdminClientDetailPage() {
                         <div key={`${p.id}-${t.platformCode}`} className="flex flex-wrap items-center gap-2">
                           <SocialPlatformIcon code={t.platformCode} className="h-4 w-4" />
                           <span>{t.platformCode}</span>
-                          <span className="rounded bg-white/5 px-1.5 py-0.5 text-[10px] uppercase">
-                            {t.status}
-                          </span>
+                          <StatusBadge status={t.status} />
                           <span className="text-xs text-content-muted">
                             {t.publishedAt
                               ? `Published ${fmt(t.publishedAt)}`
@@ -290,8 +336,8 @@ export default function AdminClientDetailPage() {
                       {p.approvals.length ? (
                         p.approvals.map((a) => (
                           <div key={a.id} className="rounded-lg border border-white/10 px-3 py-2 text-xs">
-                            <p>
-                              {a.step} · <strong>{a.decision}</strong> · rev {a.revision}
+                            <p className="flex flex-wrap items-center gap-2">
+                              {a.step} · <StatusBadge status={a.decision} /> · rev {a.revision}
                             </p>
                             <p className="text-content-muted">
                               Requested {fmt(a.createdAt)}

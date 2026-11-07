@@ -3,7 +3,17 @@
 import { useState } from "react";
 import { AuthImage } from "@/components/auth-image";
 import { SocialPlatformIcon } from "@/components/social-platform-icon";
+import { StatusBadge } from "@/components/status-badge";
 import { apiFetch } from "@/lib/api";
+
+function previewAspect(platform: string) {
+  const p = platform.toUpperCase();
+  if (p === "PINTEREST") return "aspect-[2/3]";
+  if (p === "YOUTUBE") return "aspect-video";
+  if (p === "LINKEDIN" || p === "FACEBOOK" || p === "X") return "aspect-[1.91/1]";
+  // Threads / Instagram default to square feed ratio
+  return "aspect-square";
+}
 
 export type InboxItem = {
   id: string;
@@ -95,21 +105,21 @@ export function ApprovalCard({
           >
             {previewOpen ? "Hide preview" : "Preview all networks"}
           </button>
-          <span className="rounded-lg bg-brand-warning/15 px-2 py-1 text-xs text-brand-warning">
-            {item.post.status}
-          </span>
+          <StatusBadge status={item.post.status} className="text-xs" />
         </div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-[140px_1fr]">
+      <div className="grid gap-4 md:grid-cols-[160px_1fr]">
         {item.post.mediaAsset?.kind === "IMAGE" ? (
-          <AuthImage
-            assetId={item.post.mediaAsset.id}
-            alt="Post media"
-            className="h-32 w-full rounded-xl object-cover"
-          />
+          <div className="overflow-hidden rounded-xl border border-white/10 bg-black/30">
+            <AuthImage
+              assetId={item.post.mediaAsset.id}
+              alt="Post media"
+              className="aspect-square w-full object-contain"
+            />
+          </div>
         ) : (
-          <div className="grid h-32 place-items-center rounded-xl bg-ink-elevated text-xs text-content-muted">
+          <div className="grid aspect-square place-items-center rounded-xl bg-ink-elevated text-xs text-content-muted">
             {item.post.mediaAsset?.kind ?? "No media"}
           </div>
         )}
@@ -137,11 +147,13 @@ export function ApprovalCard({
                   <span className="text-sm font-semibold">{v.platformCode}</span>
                 </div>
                 {item.post.mediaAsset?.kind === "IMAGE" ? (
-                  <AuthImage
-                    assetId={item.post.mediaAsset.id}
-                    alt=""
-                    className="mb-3 h-36 w-full rounded-xl object-cover"
-                  />
+                  <div className="mb-3 overflow-hidden rounded-xl border border-white/10 bg-black/40">
+                    <AuthImage
+                      assetId={item.post.mediaAsset.id}
+                      alt=""
+                      className={`w-full object-contain ${previewAspect(v.platformCode)}`}
+                    />
+                  </div>
                 ) : null}
                 {v.title ? <p className="mb-1 text-sm font-semibold">{v.title}</p> : null}
                 <p className="whitespace-pre-wrap text-sm leading-6">{v.caption || item.post.baseCaption}</p>
