@@ -43,16 +43,17 @@ type NotifItem = {
 function applyDocumentTheme(next: "dark" | "light") {
   document.documentElement.classList.toggle("light", next === "light");
   document.documentElement.classList.toggle("dark", next === "dark");
+  document.documentElement.dataset.theme = next;
 }
 
 function useTheme() {
   const [theme, setTheme] = useState<"dark" | "light">("dark");
 
   useEffect(() => {
-    const stored = localStorage.getItem("sr_theme") as "dark" | "light" | null;
-    if (stored === "light" || stored === "dark") {
-      setTheme(stored);
-      applyDocumentTheme(stored);
+    const userChoice = localStorage.getItem("sr_theme_user") as "dark" | "light" | null;
+    if (userChoice === "light" || userChoice === "dark") {
+      setTheme(userChoice);
+      applyDocumentTheme(userChoice);
       return;
     }
 
@@ -74,6 +75,7 @@ function useTheme() {
     const next = theme === "dark" ? "light" : "dark";
     setTheme(next);
     localStorage.setItem("sr_theme", next);
+    localStorage.setItem("sr_theme_user", next);
     applyDocumentTheme(next);
   }
 
@@ -110,6 +112,7 @@ function NavLinks({
           <Link
             key={item.href}
             href={item.href}
+            title={item.label}
             onClick={onNavigate}
             className={cn(
               "app-nav-link group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition",

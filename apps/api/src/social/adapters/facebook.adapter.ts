@@ -154,6 +154,40 @@ export class FacebookAdapter implements SocialAdapter {
     };
   }
 
+  async refreshProfile(accessToken: string) {
+    const version = "v21.0";
+    const meUrl = new URL(`https://graph.facebook.com/${version}/me`);
+    meUrl.searchParams.set("fields", "id,name");
+    meUrl.searchParams.set("access_token", accessToken);
+    const meRes = await fetch(meUrl);
+    if (!meRes.ok) return {};
+    const me = (await meRes.json()) as { id: string; name?: string };
+
+    const pagesUrl = new URL(`https://graph.facebook.com/${version}/me/accounts`);
+    pagesUrl.searchParams.set("access_token", accessToken);
+    const pagesRes = await fetch(pagesUrl);
+    if (pagesRes.ok) {
+      const pagesJson = (await pagesRes.json()) as {
+        data?: Array<{ id: string; name: string; access_token?: string }>;
+      };
+      if (pagesJson.data?.length) {
+        return {
+          externalAccountId: pagesJson.data[0].id,
+          accountName: pagesJson.data[0].name,
+          username: pagesJson.data[0].name,
+          pageIdentifier: pagesJson.data[0].id,
+          accessToken: pagesJson.data[0].access_token || accessToken,
+        };
+      }
+    }
+    return {
+      externalAccountId: me.id,
+      accountName: me.name ?? "Facebook User",
+      username: me.name ?? me.id,
+      pageIdentifier: me.id,
+    };
+  }
+
   async revoke(input: {
     accessToken: string;
     clientId: string;

@@ -377,6 +377,10 @@ export class CatalogSocialAdapter implements SocialAdapter {
     return {};
   }
 
+  async refreshProfile(accessToken: string) {
+    return this.fetchLiveProfile(accessToken);
+  }
+
   async revoke(input: {
     accessToken: string;
     clientId: string;

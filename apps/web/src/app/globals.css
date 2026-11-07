@@ -652,3 +652,39 @@ select:invalid {
     animation: none;
   }
 }
+
+/* Landing + public pages respect CMS light theme */
+html.light .landing {
+  color: var(--text);
+}
+html.light .landing .text-white {
+  color: #0b1220 !important;
+}
+html.light .landing .text-content-muted,
+html.light .landing .text-content {
+  color: var(--muted) !important;
+}
+html.light .landing-header {
+  background: rgba(255, 255, 255, 0.82) !important;
+  border-color: rgba(15, 23, 42, 0.12) !important;
+}
+html.light .landing-orbit-ring {
+  background:
+    linear-gradient(#e8eef6, #e8eef6) padding-box,
+    linear-gradient(135deg, rgba(2, 132, 199, 0.85), rgba(124, 58, 237, 0.75)) border-box;
+}
+html.light .landing-footer {
+  background: #eef3f9 !important;
+  border-top-color: rgba(15, 23, 42, 0.1) !important;
+}
+html.light .landing-grid {
+  background-image:
+    linear-gradient(rgba(15, 23, 42, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(15, 23, 42, 0.05) 1px, transparent 1px);
+}
+html.light .landing a.rounded-xl.border,
+html.light .landing .rounded-full.border {
+  border-color: rgba(15, 23, 42, 0.14);
+  background: rgba(255, 255, 255, 0.7);
+  color: #0b1220;
+}

@@ -27,10 +27,12 @@ type PlatformCard = {
     id: string;
     accountName: string | null;
     username: string | null;
+    externalAccountId?: string | null;
     status: string;
     connectionMode: string;
     tokenExpiresAt: string | null;
     lastSyncedAt: string | null;
+    needsReconnect?: boolean;
   }>;
 };
 
@@ -115,6 +117,22 @@ function SocialAccountsInner() {
     }
   }
 
+  async function refreshProfile(accountId: string) {
+    setBusy(accountId);
+    try {
+      const res = await apiFetch<{ username: string | null; accountName: string | null }>(
+        `/social-accounts/${accountId}/refresh-profile`,
+        { method: "POST" },
+      );
+      setNotice(`Profile refreshed: ${res.username || res.accountName || "updated"}`);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Refresh failed — reconnect required");
+    } finally {
+      setBusy(null);
+    }
+  }
+
   return (
     <AppShell
       title="Social accounts"
@@ -183,17 +201,39 @@ function SocialAccountsInner() {
                     className="rounded-xl border border-white/10 bg-ink-elevated p-3 text-sm"
                   >
                     <p className="font-medium">{account.accountName ?? platform.name}</p>
-                    <p className="text-content-muted">@{account.username ?? "—"}</p>
+                    <p className="text-content-muted" title={`${platform.name} username`}>
+                      {account.username && !/_live_[a-f0-9]+$/i.test(account.username)
+                        ? account.username.includes("@")
+                          ? account.username
+                          : `@${account.username}`
+                        : account.accountName || "Profile incomplete"}
+                    </p>
+                    {account.needsReconnect ? (
+                      <p className="mt-1 text-xs text-brand-error">
+                        Profile incomplete — refresh or reconnect {platform.name}.
+                      </p>
+                    ) : null}
                     <p className="mt-1 text-xs text-content-muted">
                       {account.connectionMode} · expires{" "}
                       {account.tokenExpiresAt
                         ? new Date(account.tokenExpiresAt).toLocaleDateString()
                         : "n/a"}
                     </p>
-                    <div className="mt-3 flex gap-2">
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {account.needsReconnect ? (
+                        <button
+                          className="rounded-lg border border-brand-primary/40 px-2 py-1 text-xs text-brand-primary"
+                          disabled={!!busy}
+                          title={`Refresh ${platform.name} profile`}
+                          onClick={() => refreshProfile(account.id)}
+                        >
+                          Refresh profile
+                        </button>
+                      ) : null}
                       <button
                         className="rounded-lg border border-white/10 px-2 py-1 text-xs"
                         disabled={!!busy}
+                        title={`Reconnect ${platform.name}`}
                         onClick={() => connect(platform.code)}
                       >
                         Reauthorize
@@ -201,6 +241,7 @@ function SocialAccountsInner() {
                       <button
                         className="rounded-lg border border-brand-error/40 px-2 py-1 text-xs text-brand-error"
                         disabled={busy === account.id}
+                        title={`Disconnect ${platform.name}`}
                         onClick={() => disconnect(account.id)}
                       >
                         Disconnect

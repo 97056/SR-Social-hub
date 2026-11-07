@@ -62,10 +62,10 @@ export const PLATFORM_CATALOG: PlatformCatalogEntry[] = [
     capabilities: {
       publishText: true,
       publishImage: true,
-      publishVideo: true,
+      publishVideo: false,
       schedule: false,
       assistedOnly: false,
-      notes: "Organization posting may require Marketing Developer Program access.",
+      notes: "Live member posts via LinkedIn API. Organization pages may need extra scopes.",
     },
     liveAuthorizeUrl: ({ clientId, redirectUri, scopes, state }) => {
       const q = new URLSearchParams({
@@ -88,10 +88,10 @@ export const PLATFORM_CATALOG: PlatformCatalogEntry[] = [
     capabilities: {
       publishText: true,
       publishImage: true,
-      publishVideo: true,
+      publishVideo: false,
       schedule: false,
       assistedOnly: false,
-      notes: "Write access depends on X API tier and app permissions.",
+      notes: "Live tweets via X API v2. Write access depends on your X API tier.",
     },
     liveAuthorizeUrl: ({ clientId, redirectUri, scopes, state }) => {
       const q = new URLSearchParams({
@@ -122,7 +122,7 @@ export const PLATFORM_CATALOG: PlatformCatalogEntry[] = [
       publishVideo: true,
       schedule: true,
       assistedOnly: false,
-      notes: "Requires Google OAuth + YouTube Data API quota. Video upload primary.",
+      notes: "Live YouTube video upload via Data API. Attach a video on the post.",
     },
     liveAuthorizeUrl: ({ clientId, redirectUri, scopes, state }) => {
       const q = new URLSearchParams({
@@ -148,10 +148,10 @@ export const PLATFORM_CATALOG: PlatformCatalogEntry[] = [
     capabilities: {
       publishText: true,
       publishImage: true,
-      publishVideo: true,
+      publishVideo: false,
       schedule: false,
       assistedOnly: false,
-      notes: "Production pin creation requires approved Pinterest API access.",
+      notes: "Live pins require an image and at least one Pinterest board.",
     },
     liveAuthorizeUrl: ({ clientId, redirectUri, scopes, state }) => {
       const q = new URLSearchParams({

@@ -78,6 +78,7 @@ export class SocialService {
           id: a.id,
           accountName: a.accountName,
           username: a.username,
+          externalAccountId: a.externalAccountId,
           pageIdentifier: a.pageIdentifier,
           status: a.status,
           capabilities: a.capabilities,
@@ -85,6 +86,7 @@ export class SocialService {
           tokenExpiresAt: a.tokenExpiresAt,
           connectionMode: a.connectionMode,
           lastError: a.lastError,
+          needsReconnect: this.isIncompleteProfile(a),
         })),
       };
     });
@@ -160,12 +162,22 @@ export class SocialService {
         connectionMode: a.connectionMode,
         tokenExpiresAt: a.tokenExpiresAt,
         lastSyncedAt: a.lastSyncedAt,
-        needsReconnect:
-          !a.externalAccountId ||
-          /_live_[a-f0-9]+$/i.test(a.externalAccountId) ||
-          /_live_[a-f0-9]+$/i.test(a.username ?? ""),
+        needsReconnect: this.isIncompleteProfile(a),
       })),
     };
+  }
+
+  private isIncompleteProfile(a: {
+    externalAccountId: string;
+    username: string | null;
+    accountName: string | null;
+    connectionMode: string;
+  }) {
+    if (!a.externalAccountId) return true;
+    if (/_live_[a-f0-9]+$/i.test(a.externalAccountId)) return true;
+    if (a.username && /_live_[a-f0-9]+$/i.test(a.username)) return true;
+    if (a.connectionMode === "live" && !a.username && !a.accountName) return true;
+    return false;
   }
 
   /** Client portal users are ClientMembers, not CompanyMembers — resolve company from client. */
@@ -444,6 +456,65 @@ export class SocialService {
     );
     redirect.searchParams.set("oauth_error", message.slice(0, 180));
     return redirect.toString();
+  }
+
+  async refreshProfile(accountId: string, user: AuthUser) {
+    const account = await this.prisma.socialAccount.findUnique({
+      where: { id: accountId },
+      include: { token: true },
+    });
+    if (!account) throw new NotFoundException("Social account not found");
+    await this.assertCanManageOrClient(account.companyId, account.clientId, user);
+    if (!account.token?.accessTokenEncrypted) {
+      throw new BadRequestException("No access token — disconnect and connect again.");
+    }
+
+    const accessToken = decryptSecret(account.token.accessTokenEncrypted);
+    if (accessToken.startsWith("mock_") || account.connectionMode !== "live") {
+      throw new BadRequestException(
+        "Mock accounts cannot refresh a live profile. Connect in live OAuth mode.",
+      );
+    }
+
+    const adapter = this.getAdapter(account.platformCode);
+    if (!adapter.refreshProfile) {
+      throw new BadRequestException("Profile refresh is not supported for this network yet.");
+    }
+    const profile = await adapter.refreshProfile(accessToken);
+    if (!profile.externalAccountId || /_live_[a-f0-9]+$/i.test(profile.externalAccountId)) {
+      throw new BadRequestException(
+        `${account.platformCode} profile lookup failed. Disconnect, connect again with the correct app permissions, then retry.`,
+      );
+    }
+
+    const updated = await this.prisma.socialAccount.update({
+      where: { id: account.id },
+      data: {
+        externalAccountId: profile.externalAccountId,
+        accountName: profile.accountName ?? account.accountName,
+        username: profile.username ?? account.username,
+        pageIdentifier: profile.pageIdentifier ?? account.pageIdentifier,
+        lastSyncedAt: new Date(),
+        lastError: null,
+        status: "CONNECTED",
+      },
+    });
+
+    if (profile.accessToken && profile.accessToken !== accessToken) {
+      await this.prisma.socialAccountToken.update({
+        where: { socialAccountId: account.id },
+        data: { accessTokenEncrypted: encryptSecret(profile.accessToken) },
+      });
+    }
+
+    return {
+      id: updated.id,
+      platformCode: updated.platformCode,
+      accountName: updated.accountName,
+      username: updated.username,
+      externalAccountId: updated.externalAccountId,
+      needsReconnect: this.isIncompleteProfile(updated),
+    };
   }
 
   async disconnect(accountId: string, user: AuthUser) {

@@ -83,6 +83,13 @@ export class SocialController {
   }
 
   @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
+  @Post("social-accounts/:accountId/refresh-profile")
+  refreshProfile(@Param("accountId") accountId: string, @CurrentUser() user: AuthUser) {
+    return this.social.refreshProfile(accountId, user);
+  }
+
+  @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, CompanyAccessGuard)
   @Post("companies/:companyId/clients/:clientId/social-accounts/:platform/reauthorize")
   reauthorize(

@@ -6,14 +6,19 @@ import { FALLBACK_BRANDING, type PublicBranding } from "@/lib/branding";
 function applyTheme(theme: "dark" | "light") {
   document.documentElement.classList.toggle("light", theme === "light");
   document.documentElement.classList.toggle("dark", theme === "dark");
+  document.documentElement.dataset.theme = theme;
 }
 
-/** Applies CMS default theme when the user has no explicit preference yet. */
+/**
+ * CMS default theme applies for admin / company / client / landing unless the
+ * user explicitly toggled via the sun icon (sr_theme_user).
+ */
 export function ThemeBoot() {
   useEffect(() => {
-    const explicit = localStorage.getItem("sr_theme") as "dark" | "light" | null;
-    if (explicit === "light" || explicit === "dark") {
-      applyTheme(explicit);
+    const userChoice = localStorage.getItem("sr_theme_user") as "dark" | "light" | null;
+    if (userChoice === "light" || userChoice === "dark") {
+      localStorage.setItem("sr_theme", userChoice);
+      applyTheme(userChoice);
       return;
     }
 

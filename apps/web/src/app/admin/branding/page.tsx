@@ -32,9 +32,12 @@ const ASSET_HINTS = [
 ];
 
 function applyThemeNow(theme: "dark" | "light") {
+  // CMS default becomes the project default; clear personal override so it applies everywhere.
+  localStorage.removeItem("sr_theme_user");
   localStorage.setItem("sr_theme", theme);
   document.documentElement.classList.toggle("light", theme === "light");
   document.documentElement.classList.toggle("dark", theme === "dark");
+  document.documentElement.dataset.theme = theme;
 }
 
 export default function AdminBrandingPage() {

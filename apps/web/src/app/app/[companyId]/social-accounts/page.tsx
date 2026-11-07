@@ -132,6 +132,36 @@ export default function CompanySocialAccountsPage() {
     }
   }
 
+  async function refreshProfile(accountId: string) {
+    setBusy(accountId);
+    try {
+      const res = await apiFetch<{ username: string | null; accountName: string | null }>(
+        `/social-accounts/${accountId}/refresh-profile`,
+        { method: "POST" },
+      );
+      toast.success(
+        "Profile refreshed",
+        res.username || res.accountName || "Account details updated.",
+      );
+      await load();
+    } catch (err) {
+      toast.error("Refresh failed", err instanceof Error ? err.message : "Reconnect required");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  function displayHandle(account: AccountRow) {
+    const u =
+      account.username && !/_live_[a-f0-9]+$/i.test(account.username) ? account.username : null;
+    if (u) {
+      if (u.includes("@") && u.includes(".")) return u;
+      return u.startsWith("@") ? u : `@${u}`;
+    }
+    if (account.accountName) return account.accountName;
+    return "Profile incomplete";
+  }
+
   return (
     <AppShell title="Social accounts" subtitle="Company workspace" nav={companyNav(companyId)} tone="#3DDC97">
       {error ? <p className="mb-4 text-sm text-brand-error">{error}</p> : null}
@@ -261,15 +291,7 @@ export default function CompanySocialAccountsPage() {
                       {account.accountName ?? platform.name}
                     </p>
                     <p className="mt-1 text-sm font-semibold text-brand-primary">
-                      {(() => {
-                        const u =
-                          account.username && !/_live_[a-f0-9]+$/i.test(account.username)
-                            ? account.username
-                            : null;
-                        if (!u) return "unknown — reconnect";
-                        if (u.includes("@") && u.includes(".")) return u;
-                        return u.startsWith("@") ? u : `@${u}`;
-                      })()}
+                      {displayHandle(account)}
                     </p>
                     <p className="mt-1 text-[11px] text-[var(--muted)]">
                       Account ID:{" "}
@@ -286,16 +308,28 @@ export default function CompanySocialAccountsPage() {
                     </p>
                     {account.needsReconnect ? (
                       <p className="mt-2 text-xs text-brand-error">
-                        Profile details incomplete. Disconnect, then Connect again so we store the
-                        real @{platform.name} username.
+                        Profile incomplete for {platform.name}. Tap Refresh profile, or Disconnect →
+                        Connect again to store the real username.
                       </p>
                     ) : null}
                     <div className="mt-2 flex flex-wrap gap-2">
+                      {account.needsReconnect ? (
+                        <button
+                          type="button"
+                          className="rounded-lg border border-brand-primary/40 px-2 py-1 text-xs font-semibold text-brand-primary"
+                          disabled={!!busy}
+                          onClick={() => refreshProfile(account.id)}
+                          title={`Refresh ${platform.name} profile`}
+                        >
+                          Refresh profile
+                        </button>
+                      ) : null}
                       <button
                         type="button"
                         className="rounded-lg border border-[var(--border)] px-2 py-1 text-xs font-semibold text-[var(--text)]"
                         disabled={!!busy || !canConnect}
                         onClick={() => connect(platform.code)}
+                        title={`Reconnect ${platform.name}`}
                       >
                         Reconnect
                       </button>
@@ -304,6 +338,7 @@ export default function CompanySocialAccountsPage() {
                         className="rounded-lg border border-brand-error/30 px-2 py-1 text-xs font-semibold text-brand-error"
                         disabled={!!busy}
                         onClick={() => disconnect(account.id)}
+                        title={`Disconnect ${platform.name}`}
                       >
                         Disconnect
                       </button>

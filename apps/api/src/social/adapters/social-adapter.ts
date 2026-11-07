@@ -59,4 +59,12 @@ export interface SocialAdapter {
     clientSecret: string;
     mode: AdapterAuthMode;
   }): Promise<void>;
+  /** Re-fetch provider profile for an existing access token (username / account id). */
+  refreshProfile?(accessToken: string): Promise<{
+    externalAccountId?: string;
+    accountName?: string | null;
+    username?: string | null;
+    pageIdentifier?: string | null;
+    accessToken?: string;
+  }>;
 }

@@ -94,7 +94,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <link rel="canonical" href={SITE_URL} />
         <script
           dangerouslySetInnerHTML={{
-            __html: `try{var t=localStorage.getItem('sr_theme');if(t==='light'){document.documentElement.classList.add('light');document.documentElement.classList.remove('dark');}else if(t==='dark'){document.documentElement.classList.add('dark');document.documentElement.classList.remove('light');}}catch(e){}`,
+            __html: `try{var u=localStorage.getItem('sr_theme_user');var t=u||localStorage.getItem('sr_theme');if(t==='light'){document.documentElement.classList.add('light');document.documentElement.classList.remove('dark');document.documentElement.dataset.theme='light';}else if(t==='dark'){document.documentElement.classList.add('dark');document.documentElement.classList.remove('light');document.documentElement.dataset.theme='dark';}}catch(e){}`,
           }}
         />
       </head>
