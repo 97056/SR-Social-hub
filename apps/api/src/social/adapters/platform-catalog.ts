@@ -144,14 +144,21 @@ export const PLATFORM_CATALOG: PlatformCatalogEntry[] = [
     displayName: "Pinterest",
     mockPrefix: "pin",
     accountLabel: "Pinterest Board Account",
-    scopes: ["boards:read", "boards:write", "pins:read", "pins:write"],
+    scopes: [
+      "user_accounts:read",
+      "boards:read",
+      "boards:write",
+      "pins:read",
+      "pins:write",
+    ],
     capabilities: {
       publishText: true,
       publishImage: true,
       publishVideo: false,
       schedule: false,
       assistedOnly: false,
-      notes: "Live pins require an image and at least one Pinterest board.",
+      notes:
+        "Live pins require an image and a board. Pinterest app must include user_accounts:read.",
     },
     liveAuthorizeUrl: ({ clientId, redirectUri, scopes, state }) => {
       const q = new URLSearchParams({

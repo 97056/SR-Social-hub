@@ -58,6 +58,12 @@ export function companyNav(companyId: string): NavItem[] {
     { href: `/app/${companyId}/publishing`, label: "Publishing Queue", icon: "publishing", color: "#C026FF" },
     { href: `/app/${companyId}/billing`, label: "Billing", icon: "billing", color: "#3DDC97" },
     { href: `/app/${companyId}/analytics`, label: "Analytics", icon: "analytics", color: "#7B5CFF" },
+    {
+      href: `/app/${companyId}/analysis`,
+      label: "Competitor Analysis",
+      icon: "analytics",
+      color: "#FF6B6B",
+    },
     { href: `/app/${companyId}/notifications`, label: "Notifications", icon: "notifications", color: "#FF6B6B" },
     { href: `/app/${companyId}/team`, label: "Team Members", icon: "team", color: "#00D2FF" },
     { href: `/app/${companyId}/settings`, label: "Settings", icon: "settings", color: "#9AA3B8" },

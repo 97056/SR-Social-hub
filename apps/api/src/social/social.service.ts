@@ -256,10 +256,14 @@ export class SocialService {
       ? resolveMetaRedirectUri(platform.appConfig?.redirectUri)
       : platform.appConfig?.redirectUri ||
         `${process.env.API_URL ?? "http://localhost:4000"}/api/v1/oauth/callback`;
-    const scopes =
-      platform.appConfig?.scopes?.length
-        ? platform.appConfig.scopes
-        : adapter.getDefaultScopes();
+    // Union admin-configured scopes with adapter defaults so new required scopes
+    // (e.g. Pinterest user_accounts:read) apply without a manual Integrations edit.
+    const scopes = [
+      ...new Set([
+        ...(platform.appConfig?.scopes?.length ? platform.appConfig.scopes : []),
+        ...adapter.getDefaultScopes(),
+      ]),
+    ];
     const configId = resolveMetaConfigId(input.platformCode, platform.appConfig?.configId);
 
     const state = randomBytes(24).toString("hex");

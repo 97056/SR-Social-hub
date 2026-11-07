@@ -169,6 +169,8 @@ export function AppShell({
   const [notifOpen, setNotifOpen] = useState(false);
   const [notifs, setNotifs] = useState<NotifItem[]>([]);
   const [unread, setUnread] = useState(0);
+  const [platformLogo, setPlatformLogo] = useState<string | null>(null);
+  const [platformName, setPlatformName] = useState<string | null>(null);
   const notifRef = useRef<HTMLDivElement>(null);
 
   const activeTone =
@@ -198,6 +200,17 @@ export function AppShell({
         },
       );
     }
+    const api = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
+    fetch(`${api}/api/v1/branding`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: { logoUrl?: string; platformName?: string } | null) => {
+        if (data?.logoUrl) setPlatformLogo(data.logoUrl);
+        if (data?.platformName) setPlatformName(data.platformName);
+      })
+      .catch(() => {
+        setPlatformLogo("/brand/logo.png");
+        setPlatformName("SR Social Hub");
+      });
     if (!getToken()) return;
     apiFetch<MeResponse>("/auth/me")
       .then((res) => {
@@ -211,6 +224,9 @@ export function AppShell({
       .then((r) => setUnread(r.count))
       .catch(() => setUnread(0));
   }, [pathname]);
+
+  const shellLogo = brandLogoUrl || platformLogo || "/brand/logo.png";
+  const shellName = brandName || platformName || "SR Social Hub";
 
   useEffect(() => {
     function onDoc(e: MouseEvent) {
@@ -260,24 +276,16 @@ export function AppShell({
     >
       <aside className="app-sidebar hidden max-h-screen overflow-y-auto border-r border-[var(--border)] bg-[var(--sidebar)] lg:sticky lg:top-0 lg:block lg:min-h-screen">
         <div className="flex items-center gap-3 border-b border-[var(--border)] px-5 py-5">
-          {brandLogoUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={brandLogoUrl}
-              alt={brandName || "Brand"}
-              className="h-11 w-11 rounded-2xl object-cover shadow-sm ring-1 ring-white/10"
-            />
-          ) : (
-            <div
-              className="grid h-11 w-11 place-items-center rounded-2xl font-display text-sm font-bold text-white shadow-sm"
-              style={{ background: `linear-gradient(135deg, ${activeTone}, #7B5CFF)` }}
-            >
-              {brandName ? brandName.slice(0, 2).toUpperCase() : "SR"}
-            </div>
-          )}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={shellLogo}
+            alt={shellName}
+            title={shellName}
+            className="h-11 w-11 rounded-2xl object-cover shadow-sm ring-1 ring-white/10"
+          />
           <div className="min-w-0">
             <p className="truncate font-display text-base font-semibold tracking-tight text-[var(--text)]">
-              {brandName || "SR Social Hub"}
+              {shellName}
             </p>
             <p className="truncate text-xs text-[var(--muted)]">{subtitle ?? "Workspace"}</p>
           </div>
@@ -458,24 +466,16 @@ export function AppShell({
               >
                 <div className="flex items-center justify-between gap-3 px-4 py-5">
                   <div className="flex items-center gap-3">
-                    {brandLogoUrl ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={brandLogoUrl}
-                        alt={brandName || "Brand"}
-                        className="h-10 w-10 rounded-xl object-cover ring-1 ring-white/10"
-                      />
-                    ) : (
-                      <div
-                        className="grid h-10 w-10 place-items-center rounded-xl font-display text-sm font-bold text-[#050814]"
-                        style={{ background: activeTone }}
-                      >
-                        {brandName ? brandName.slice(0, 2).toUpperCase() : "SR"}
-                      </div>
-                    )}
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={shellLogo}
+                      alt={shellName}
+                      title={shellName}
+                      className="h-10 w-10 rounded-xl object-cover ring-1 ring-white/10"
+                    />
                     <div>
                       <p className="font-display text-sm font-semibold text-[var(--text)]">
-                        {brandName || "SR Social Hub"}
+                        {shellName}
                       </p>
                       <p className="text-xs text-[var(--muted)]">{subtitle ?? "Workspace"}</p>
                     </div>

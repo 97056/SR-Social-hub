@@ -166,8 +166,14 @@ export class CatalogSocialAdapter implements SocialAdapter {
       this.entry.code === "YOUTUBE" ||
       this.entry.code === "PINTEREST";
     if (requiresRealProfile && !profile.externalAccountId) {
+      const hint =
+        typeof profile.rawMeta?.hint === "string"
+          ? ` ${profile.rawMeta.hint}`
+          : this.entry.code === "PINTEREST"
+            ? " Add the user_accounts:read scope in your Pinterest developer app, save, then reconnect."
+            : " Check app permissions / Live mode, then reconnect.";
       throw new Error(
-        `${this.displayName} connected but profile lookup failed. Check app permissions / Live mode, then reconnect.`,
+        `${this.displayName} connected but profile lookup failed.${hint}`,
       );
     }
     return {
@@ -215,23 +221,65 @@ export class CatalogSocialAdapter implements SocialAdapter {
   }> {
     try {
       if (this.entry.code === "PINTEREST") {
-        const res = await fetch("https://api.pinterest.com/v5/user_account", {
+        // Requires user_accounts:read. Fall back to boards if profile is restricted.
+        const meRes = await fetch("https://api.pinterest.com/v5/user_account", {
           headers: { Authorization: `Bearer ${accessToken}` },
         });
-        if (!res.ok) return {};
-        const user = (await res.json()) as {
-          id?: string;
-          username?: string;
-          business_name?: string;
-          account_type?: string;
-        };
-        const username = user.username || null;
+        if (meRes.ok) {
+          const user = (await meRes.json()) as {
+            id?: string;
+            username?: string;
+            business_name?: string;
+            account_type?: string;
+            profile_image?: string;
+          };
+          const username = user.username?.replace(/^@/, "") || null;
+          const externalAccountId = user.id || username || undefined;
+          if (externalAccountId) {
+            return {
+              externalAccountId,
+              accountName: user.business_name || username || "Pinterest Account",
+              username: username || externalAccountId,
+              pageIdentifier: user.id || username || null,
+              rawMeta: {
+                accountType: user.account_type ?? null,
+                profileImage: user.profile_image ?? null,
+                profileSource: "user_account",
+              },
+            };
+          }
+        }
+
+        const boardsRes = await fetch("https://api.pinterest.com/v5/boards?page_size=5", {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        });
+        if (boardsRes.ok) {
+          const boardsJson = (await boardsRes.json()) as {
+            items?: Array<{ id?: string; name?: string; owner?: { username?: string } }>;
+          };
+          const board = boardsJson.items?.[0];
+          const username = board?.owner?.username?.replace(/^@/, "") || null;
+          if (username || board?.id) {
+            return {
+              externalAccountId: username || board!.id!,
+              accountName: username || board?.name || "Pinterest Account",
+              username: username || board?.id || null,
+              pageIdentifier: board?.id || username || null,
+              rawMeta: {
+                profileSource: "boards_fallback",
+                boardId: board?.id ?? null,
+                meStatus: meRes.status,
+              },
+            };
+          }
+        }
+
         return {
-          externalAccountId: user.id || username || undefined,
-          accountName: user.business_name || username || "Pinterest Account",
-          username,
-          pageIdentifier: user.id || username || null,
-          rawMeta: { accountType: user.account_type ?? null },
+          rawMeta: {
+            profileSource: "failed",
+            meStatus: meRes.status,
+            hint: "Enable user_accounts:read on the Pinterest app, then reconnect.",
+          },
         };
       }
 

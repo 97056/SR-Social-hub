@@ -9,10 +9,12 @@ export const metadata: Metadata = {
 
 export default function DeleteAccountPage() {
   return (
-    <LegalShell title="Delete Account & User Data" updated="3 November 2026">
+    <LegalShell title="Delete Account & User Data" updated="8 November 2026">
       <p>
-        This page explains how to delete your SR Social Hub account and related personal data. Social
-        platforms (including Meta) may ask for this URL when you configure an app.
+        This page explains how to delete your SR Social Hub account and related personal data. We
+        publish it so people — and social platforms that require a data-deletion URL — can see the
+        exact steps we follow. Deletion requests are handled by humans on our support team; we do not
+        leave accounts hanging without a response.
       </p>
 
       <h2>1. In-app deletion (preferred)</h2>
