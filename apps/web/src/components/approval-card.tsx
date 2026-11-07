@@ -62,12 +62,18 @@ export function ApprovalCard({
     }
   }
 
-  const platforms =
+  const platforms: Array<{
+    platformCode: string;
+    caption: string;
+    title?: string | null;
+    hashtags?: string;
+  }> =
     item.post.variants.length > 0
       ? item.post.variants
       : item.post.targets.map((t) => ({
           platformCode: t.platformCode,
           caption: item.post.baseCaption,
+          title: null,
           hashtags: item.post.baseHashtags,
         }));
 
