@@ -190,7 +190,7 @@ export class ClientsService {
             ``,
             `Sign in: ${loginUrl}`,
             ``,
-            `Password starts with SR. Keep it private. Change it anytime via Forgot password.`,
+            `Keep this password private. Change it anytime via Forgot password.`,
           ].join("\n"),
         });
         mailSent = true;

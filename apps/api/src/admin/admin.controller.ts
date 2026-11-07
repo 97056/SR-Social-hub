@@ -45,6 +45,11 @@ export class AdminController {
     return this.admin.getCompanyDetail(companyId);
   }
 
+  @Get("clients/:clientId")
+  clientDetail(@Param("clientId") clientId: string) {
+    return this.admin.getClientDetail(clientId);
+  }
+
   @Post("companies")
   createCompany(@CurrentUser() user: AuthUser, @Body() dto: CreateCompanyDto) {
     return this.admin.createCompany(user, dto);

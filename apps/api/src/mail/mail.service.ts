@@ -273,7 +273,7 @@ export class MailService {
                   <p style="margin:0 0 14px;font-size:15px;font-weight:700;color:#f5f7ff;word-break:break-all">${escapeHtml(opts.email)}</p>
                   <p style="margin:0 0 4px;font-size:11px;color:#8a9a7a;letter-spacing:.12em;text-transform:uppercase">Password</p>
                   <p style="margin:0;padding:12px 14px;border-radius:10px;background:#050a08;border:1px solid rgba(240,193,74,.4);font-family:Consolas,'Courier New',monospace;font-size:18px;letter-spacing:.12em;font-weight:700;color:#F0C14A;word-break:break-all">${escapeHtml(opts.password)}</p>
-                  <p style="margin:12px 0 0;font-size:11px;line-height:1.5;color:#7d8f78">Starts with <strong style="color:#F0C14A">SR</strong> · keep offline · change via Forgot password after first login</p>
+                  <p style="margin:12px 0 0;font-size:11px;line-height:1.5;color:#7d8f78">Keep this password private. You can change it anytime with Forgot password after first login.</p>
                 </td></tr>
               </table>
 

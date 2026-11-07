@@ -4,11 +4,19 @@ import { Suspense, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { AuthImage } from "@/components/auth-image";
 import { AppShell } from "@/components/shell";
+import { SocialPlatformIcon, PLATFORM_BRAND_COLOR } from "@/components/social-platform-icon";
+import { toast } from "@/components/toast";
 import { apiFetch, getToken } from "@/lib/api";
 import { companyNav } from "@/lib/nav";
 
-type Client = { id: string; name: string };
-type MediaAsset = { id: string; originalName: string; kind: string };
+type Client = { id: string; name: string; logoUrl?: string | null };
+type MediaAsset = {
+  id: string;
+  originalName: string;
+  kind: string;
+  createdAt?: string;
+  updatedAt?: string;
+};
 type SocialCard = {
   platform: { code: string; name: string; connectable: boolean };
   accounts: Array<{ id: string; accountName: string | null; status: string }>;
@@ -51,8 +59,10 @@ function CreatePostInner() {
 
   const [step, setStep] = useState(0);
   const [clients, setClients] = useState<Client[]>([]);
+  const [clientQuery, setClientQuery] = useState("");
   const [clientId, setClientId] = useState(search.get("clientId") ?? "");
   const [media, setMedia] = useState<MediaAsset[]>([]);
+  const [mediaQuery, setMediaQuery] = useState("");
   const [social, setSocial] = useState<SocialCard[]>([]);
   const [rules, setRules] = useState<Rules>({});
   const [post, setPost] = useState<Post | null>(null);
@@ -81,7 +91,6 @@ function CreatePostInner() {
       .then(([ws, r]) => {
         setClients(ws.clients);
         setRules(r);
-        if (!clientId && ws.clients[0]) setClientId(ws.clients[0].id);
       })
       .catch((e: Error) => setError(e.message));
   }, [companyId, router]);
@@ -95,14 +104,38 @@ function CreatePostInner() {
       .then(([m, s]) => {
         setMedia(m);
         setSocial(s);
+        const connected = s
+          .filter((x) => x.accounts.some((a) => a.status === "CONNECTED"))
+          .map((x) => x.platform.code);
+        setSelectedPlatforms((prev) => (prev.length ? prev : connected));
+        const map: Record<string, string> = {};
+        for (const card of s) {
+          const acc = card.accounts.find((a) => a.status === "CONNECTED") ?? card.accounts[0];
+          if (acc) map[card.platform.code] = acc.id;
+        }
+        setAccountMap((prev) => ({ ...map, ...prev }));
       })
       .catch((e: Error) => setError(e.message));
   }, [clientId, companyId]);
+
+  const filteredClients = useMemo(() => {
+    const q = clientQuery.trim().toLowerCase();
+    if (!q) return clients;
+    return clients.filter((c) => c.name.toLowerCase().includes(q));
+  }, [clients, clientQuery]);
+
+  const filteredMedia = useMemo(() => {
+    const q = mediaQuery.trim().toLowerCase();
+    if (!q) return media;
+    return media.filter((m) => m.originalName.toLowerCase().includes(q));
+  }, [media, mediaQuery]);
 
   const activeVariantPlatforms = useMemo(
     () => selectedPlatforms.filter((p) => variants[p]),
     [selectedPlatforms, variants],
   );
+
+  const selectedMedia = media.find((m) => m.id === mediaId);
 
   async function ensureDraft() {
     if (post) return post;
@@ -174,21 +207,53 @@ function CreatePostInner() {
     }
   }
 
-  async function submit(action: "DRAFT" | "PENDING_APPROVAL" | "SCHEDULED") {
-    if (!post) return;
+  async function submit(
+    action: "PENDING_APPROVAL" | "SCHEDULED" | "PUBLISH_NOW",
+    skipApproval = false,
+  ) {
+    if (!post && !(await ensureDraft())) return;
+    const current = post ?? (await ensureDraft());
     setBusy(true);
     setError(null);
     try {
       await saveContentAndPlatforms();
-      const result = await apiFetch<{ post: Post; validation: Validation }>(`/posts/${post.id}/submit`, {
-        method: "POST",
-        body: JSON.stringify({
-          action,
-          scheduledAt: scheduledAt || undefined,
-        }),
-      });
+      const result = await apiFetch<{ post: Post; validation: Validation }>(
+        `/posts/${current.id}/submit`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            action,
+            scheduledAt: scheduledAt || undefined,
+            skipApproval,
+          }),
+        },
+      );
       setPost(result.post);
       setValidation(result.validation);
+      if (action === "PUBLISH_NOW" && skipApproval) {
+        try {
+          await apiFetch(`/posts/${result.post.id}/publish`, { method: "POST", body: "{}" });
+          await apiFetch("/publishing/worker/tick", { method: "POST" });
+          toast.success("Publishing", "Queued to all selected networks");
+          router.push(`/app/${companyId}/publishing`);
+          return;
+        } catch (err) {
+          toast.error(
+            "Queued for approval path",
+            err instanceof Error ? err.message : "Open Publishing queue to retry",
+          );
+        }
+      }
+      if (action === "PENDING_APPROVAL") {
+        toast.success("Sent for approval", "Client will review in Approvals");
+      } else if (action === "SCHEDULED") {
+        toast.success(
+          skipApproval ? "Scheduled" : "Scheduled pending approval",
+          skipApproval
+            ? "Will publish at the selected time"
+            : "Client must approve before publish",
+        );
+      }
       setStep(6);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Submit failed");
@@ -204,7 +269,7 @@ function CreatePostInner() {
   }
 
   return (
-    <AppShell title="Create post" subtitle="Content studio" nav={companyNav(companyId)}>
+    <AppShell title="Create post" subtitle="Content studio" nav={companyNav(companyId)} tone="#F0C14A">
       {error ? <p className="mb-4 text-sm text-brand-error">{error}</p> : null}
 
       <div className="mb-6 flex flex-wrap gap-2">
@@ -226,25 +291,44 @@ function CreatePostInner() {
       </div>
 
       {step === 0 && (
-        <div className="panel max-w-xl space-y-4 p-5">
+        <div className="panel space-y-4 p-5">
           <h2 className="font-display text-lg font-semibold">Select client</h2>
-          <select
-            className="w-full rounded-xl border border-white/10 bg-ink-elevated px-3 py-2 text-sm"
-            value={clientId}
-            onChange={(e) => {
-              setClientId(e.target.value);
-              setPost(null);
-              setSelectedPlatforms([]);
-            }}
-          >
-            {clients.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
+          <input
+            className="field max-w-md"
+            placeholder="Search clients…"
+            value={clientQuery}
+            onChange={(e) => setClientQuery(e.target.value)}
+          />
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            {filteredClients.map((c) => (
+              <button
+                key={c.id}
+                type="button"
+                className={`flex items-center gap-3 rounded-2xl border p-4 text-left ${
+                  clientId === c.id
+                    ? "border-brand-primary bg-brand-primary/10"
+                    : "border-[var(--border)] bg-[var(--elevated)]"
+                }`}
+                onClick={() => {
+                  setClientId(c.id);
+                  setPost(null);
+                  setSelectedPlatforms([]);
+                }}
+              >
+                {c.logoUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={c.logoUrl} alt="" className="h-12 w-12 rounded-xl object-cover" />
+                ) : (
+                  <span className="grid h-12 w-12 place-items-center rounded-xl bg-brand-primary/20 font-bold">
+                    {c.name.slice(0, 1).toUpperCase()}
+                  </span>
+                )}
+                <span className="font-semibold">{c.name}</span>
+              </button>
             ))}
-          </select>
+          </div>
           <button
-            className="rounded-xl bg-brand-primary px-4 py-2 text-sm font-semibold text-white"
+            className="btn-primary disabled:opacity-50"
             onClick={() => setStep(1)}
             disabled={!clientId}
           >
@@ -254,51 +338,63 @@ function CreatePostInner() {
       )}
 
       {step === 1 && (
-        <div className="space-y-4">
-          <div className="panel p-5">
-            <h2 className="font-display text-lg font-semibold">Select media</h2>
-            <p className="mt-1 text-sm text-content-muted">Optional for some platforms; required for Instagram.</p>
-            <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-              <button
-                className={`rounded-xl border p-4 text-left text-sm ${
-                  !mediaId ? "border-brand-primary bg-brand-primary/10" : "border-white/10"
-                }`}
-                onClick={() => setMediaId("")}
-              >
-                No media
-              </button>
-              {media.map((m) => (
-                <button
-                  key={m.id}
-                  className={`overflow-hidden rounded-xl border text-left ${
-                    mediaId === m.id ? "border-brand-primary" : "border-white/10"
-                  }`}
-                  onClick={() => setMediaId(m.id)}
-                >
-                  {m.kind === "IMAGE" ? (
-                    <AuthImage assetId={m.id} alt={m.originalName} className="h-28 w-full object-cover" />
-                  ) : (
-                    <div className="grid h-28 place-items-center bg-ink-elevated text-xs text-content-muted">
-                      {m.kind}
-                    </div>
-                  )}
-                  <p className="truncate p-2 text-xs">{m.originalName}</p>
-                </button>
-              ))}
-            </div>
+        <div className="panel space-y-4 p-5">
+          <h2 className="font-display text-lg font-semibold">Select media</h2>
+          <input
+            className="field max-w-md"
+            placeholder="Search media by name…"
+            value={mediaQuery}
+            onChange={(e) => setMediaQuery(e.target.value)}
+          />
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             <button
-              className="mt-4 rounded-xl bg-brand-primary px-4 py-2 text-sm font-semibold text-white"
-              onClick={() => setStep(2)}
+              className={`rounded-xl border p-4 text-left text-sm ${
+                !mediaId ? "border-brand-primary bg-brand-primary/10" : "border-white/10"
+              }`}
+              onClick={() => setMediaId("")}
             >
-              Continue
+              No media
             </button>
+            {filteredMedia.map((m) => (
+              <button
+                key={m.id}
+                className={`overflow-hidden rounded-xl border text-left ${
+                  mediaId === m.id ? "border-brand-primary" : "border-white/10"
+                }`}
+                onClick={() => setMediaId(m.id)}
+              >
+                {m.kind === "IMAGE" ? (
+                  <AuthImage assetId={m.id} alt={m.originalName} className="h-28 w-full object-cover" />
+                ) : (
+                  <div className="grid h-28 place-items-center bg-ink-elevated text-xs text-content-muted">
+                    {m.kind}
+                  </div>
+                )}
+                <div className="p-2">
+                  <p className="truncate text-xs font-medium">{m.originalName}</p>
+                  <p className="mt-1 text-[10px] text-content-muted">
+                    {m.createdAt ? new Date(m.createdAt).toLocaleString() : "—"}
+                  </p>
+                </div>
+              </button>
+            ))}
           </div>
+          <button className="btn-primary" onClick={() => setStep(2)}>
+            Continue
+          </button>
         </div>
       )}
 
       {step === 2 && (
         <div className="panel max-w-2xl space-y-3 p-5">
           <h2 className="font-display text-lg font-semibold">Base content</h2>
+          {selectedMedia?.kind === "IMAGE" ? (
+            <AuthImage
+              assetId={selectedMedia.id}
+              alt={selectedMedia.originalName}
+              className="h-44 w-full rounded-2xl object-cover"
+            />
+          ) : null}
           <div className="flex flex-wrap gap-2">
             {(
               [
@@ -317,10 +413,7 @@ function CreatePostInner() {
                   setBusy(true);
                   setError(null);
                   try {
-                    const res = await apiFetch<{
-                      text: string;
-                      disclaimer: string;
-                    }>(`/companies/${companyId}/ai/generate`, {
+                    const res = await apiFetch<{ text: string }>(`/companies/${companyId}/ai/generate`, {
                       method: "POST",
                       body: JSON.stringify({
                         feature,
@@ -343,9 +436,6 @@ function CreatePostInner() {
               </button>
             ))}
           </div>
-          <p className="text-xs text-content-muted">
-            AI drafts are editable. They do not guarantee engagement or conversions.
-          </p>
           <textarea
             className="min-h-32 w-full rounded-xl border border-white/10 bg-ink-elevated px-3 py-2 text-sm"
             placeholder="Caption"
@@ -371,7 +461,7 @@ function CreatePostInner() {
             onChange={(e) => setLinkUrl(e.target.value)}
           />
           <button
-            className="rounded-xl bg-brand-primary px-4 py-2 text-sm font-semibold text-white"
+            className="btn-primary"
             onClick={async () => {
               setBusy(true);
               try {
@@ -391,60 +481,73 @@ function CreatePostInner() {
 
       {step === 3 && (
         <div className="panel space-y-4 p-5">
-          <h2 className="font-display text-lg font-semibold">Select platforms</h2>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="font-display text-lg font-semibold">Select platforms</h2>
+            <button
+              type="button"
+              className="text-xs font-semibold text-brand-primary"
+              onClick={() => {
+                const all = social
+                  .filter((s) => s.accounts.some((a) => a.status === "CONNECTED"))
+                  .map((s) => s.platform.code);
+                setSelectedPlatforms(all);
+              }}
+            >
+              Select all connected
+            </button>
+          </div>
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {social.map(({ platform, accounts }) => (
-              <label
-                key={platform.code}
-                className={`rounded-xl border p-4 text-sm ${
-                  selectedPlatforms.includes(platform.code)
-                    ? "border-brand-primary bg-brand-primary/10"
-                    : "border-white/10"
-                }`}
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <span className="font-medium">{platform.name}</span>
-                  <input
-                    type="checkbox"
-                    checked={selectedPlatforms.includes(platform.code)}
-                    onChange={() => togglePlatform(platform.code)}
-                  />
-                </div>
-                <p className="mt-2 text-xs text-content-muted">{rules[platform.code]?.notes}</p>
-                {accounts.length ? (
-                  <select
-                    className="mt-3 w-full rounded-lg border border-white/10 bg-ink-elevated px-2 py-1.5 text-xs"
-                    value={accountMap[platform.code] ?? accounts[0]?.id ?? ""}
-                    onChange={(e) =>
-                      setAccountMap((m) => ({ ...m, [platform.code]: e.target.value }))
-                    }
-                  >
-                    {accounts.map((a) => (
-                      <option key={a.id} value={a.id}>
-                        {a.accountName ?? a.id}
-                      </option>
-                    ))}
-                  </select>
-                ) : (
-                  <p className="mt-2 text-xs text-brand-warning">No connected account</p>
-                )}
-              </label>
-            ))}
+            {social.map(({ platform, accounts }) => {
+              const color = PLATFORM_BRAND_COLOR[platform.code] ?? "#7B5CFF";
+              const on = selectedPlatforms.includes(platform.code);
+              return (
+                <label
+                  key={platform.code}
+                  className="rounded-2xl border p-4 text-sm"
+                  style={{
+                    borderColor: on ? color : undefined,
+                    background: on ? `${color}18` : undefined,
+                  }}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="flex items-center gap-2 font-medium">
+                      <SocialPlatformIcon code={platform.code} className="h-6 w-6" />
+                      {platform.name}
+                    </span>
+                    <input
+                      type="checkbox"
+                      checked={on}
+                      onChange={() => togglePlatform(platform.code)}
+                    />
+                  </div>
+                  <p className="mt-2 text-xs text-content-muted">{rules[platform.code]?.notes}</p>
+                  {accounts.length ? (
+                    <select
+                      className="mt-3 w-full rounded-lg border border-white/10 bg-ink-elevated px-2 py-1.5 text-xs"
+                      value={accountMap[platform.code] ?? accounts[0]?.id ?? ""}
+                      onChange={(e) =>
+                        setAccountMap((m) => ({ ...m, [platform.code]: e.target.value }))
+                      }
+                    >
+                      {accounts.map((a) => (
+                        <option key={a.id} value={a.id}>
+                          {a.accountName ?? a.id}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <p className="mt-2 text-xs text-brand-warning">No connected account</p>
+                  )}
+                </label>
+              );
+            })}
           </div>
           <button
-            className="rounded-xl bg-brand-primary px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+            className="btn-primary disabled:opacity-50"
             disabled={!selectedPlatforms.length || busy}
             onClick={async () => {
               setBusy(true);
               try {
-                for (const code of selectedPlatforms) {
-                  if (social.find((s) => s.platform.code === code)?.accounts[0] && !accountMap[code]) {
-                    setAccountMap((m) => ({
-                      ...m,
-                      [code]: social.find((s) => s.platform.code === code)!.accounts[0].id,
-                    }));
-                  }
-                }
                 await saveContentAndPlatforms();
                 setStep(4);
               } catch (err) {
@@ -461,6 +564,22 @@ function CreatePostInner() {
 
       {step === 4 && (
         <div className="space-y-4">
+          <div className="panel p-4">
+            <p className="mb-3 text-[11px] font-semibold uppercase tracking-wide text-content-muted">
+              Selected platforms preview
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {selectedPlatforms.map((code) => (
+                <div
+                  key={code}
+                  className="flex max-w-xs items-start gap-2 rounded-xl border border-white/10 bg-[var(--elevated)] p-2 text-xs"
+                >
+                  <SocialPlatformIcon code={code} className="mt-0.5 h-4 w-4 shrink-0" />
+                  <span className="line-clamp-3">{variants[code]?.caption || caption || "—"}</span>
+                </div>
+              ))}
+            </div>
+          </div>
           <div className="flex flex-wrap gap-2">
             <button
               className="rounded-xl border border-white/15 px-3 py-2 text-xs"
@@ -481,10 +600,10 @@ function CreatePostInner() {
           </div>
           {activeVariantPlatforms.map((code) => (
             <div key={code} className="panel space-y-2 p-5">
-              <h3 className="font-display font-semibold">{code}</h3>
-              <p className="text-xs text-content-muted">
-                Max {rules[code]?.captionMax ?? "—"} chars · approx. preview only
-              </p>
+              <h3 className="flex items-center gap-2 font-display font-semibold">
+                <SocialPlatformIcon code={code} className="h-5 w-5" />
+                {code}
+              </h3>
               {(code === "YOUTUBE" || code === "PINTEREST") && (
                 <input
                   className="w-full rounded-xl border border-white/10 bg-ink-elevated px-3 py-2 text-sm"
@@ -513,17 +632,9 @@ function CreatePostInner() {
                   }))
                 }
               />
-              <div className="rounded-xl border border-dashed border-white/15 bg-ink-elevated/50 p-3 text-sm">
-                <p className="text-xs uppercase tracking-[0.18em] text-content-muted">Preview (approx.)</p>
-                <p className="mt-2 whitespace-pre-wrap">{variants[code]?.caption}</p>
-              </div>
             </div>
           ))}
-          <button
-            className="rounded-xl bg-brand-primary px-4 py-2 text-sm font-semibold text-white"
-            disabled={busy}
-            onClick={runValidate}
-          >
+          <button className="btn-primary" disabled={busy} onClick={runValidate}>
             Validate
           </button>
         </div>
@@ -544,63 +655,59 @@ function CreatePostInner() {
               ))}
             </ul>
           )}
-          {(validation?.warnings ?? []).length > 0 && (
-            <ul className="space-y-2 text-sm text-brand-warning">
-              {validation!.warnings.map((w, i) => (
-                <li key={i}>
-                  {w.platform ? `${w.platform}: ` : ""}
-                  {w.message}
-                </li>
-              ))}
-            </ul>
-          )}
-          <label className="block text-xs text-content-muted">
-            Schedule (optional)
-            <input
-              type="datetime-local"
-              className="mt-1 w-full rounded-xl border border-white/10 bg-ink-elevated px-3 py-2 text-sm text-white"
-              value={scheduledAt}
-              onChange={(e) => setScheduledAt(e.target.value)}
-            />
-          </label>
-          <button
-            className="rounded-xl bg-brand-primary px-4 py-2 text-sm font-semibold text-white"
-            onClick={() => setStep(6)}
-          >
+          <button className="btn-primary" onClick={() => setStep(6)}>
             Continue to submit
           </button>
         </div>
       )}
 
       {step === 6 && (
-        <div className="panel max-w-xl space-y-3 p-5">
-          <h2 className="font-display text-lg font-semibold">Save or submit</h2>
-          <p className="text-sm text-content-muted">
-            Direct publish is deferred to the publishing engine. Approvals and schedules are persisted now.
-          </p>
-          <div className="flex flex-wrap gap-2">
-            <button
-              disabled={busy}
-              className="rounded-xl border border-white/15 px-4 py-2 text-sm"
-              onClick={() => submit("DRAFT")}
-            >
-              Save draft
-            </button>
-            <button
-              disabled={busy}
-              className="rounded-xl bg-brand-primary px-4 py-2 text-sm font-semibold text-white"
-              onClick={() => submit("PENDING_APPROVAL")}
-            >
-              Submit for approval
-            </button>
-            <button
-              disabled={busy || !scheduledAt}
-              className="rounded-xl border border-brand-secondary/40 px-4 py-2 text-sm text-brand-secondary disabled:opacity-50"
-              onClick={() => submit("SCHEDULED")}
-            >
-              Schedule
-            </button>
+        <div className="panel max-w-xl space-y-5 p-5">
+          <h2 className="font-display text-lg font-semibold">Submit</h2>
+          <button
+            disabled={busy}
+            className="btn-primary w-full disabled:opacity-50"
+            onClick={() => submit("PENDING_APPROVAL")}
+          >
+            Send to client for approval
+          </button>
+
+          <div className="rounded-2xl border border-white/10 bg-[var(--elevated)] p-4 space-y-3">
+            <p className="text-sm font-semibold">Direct schedule / publish</p>
+            <label className="block text-xs text-content-muted">
+              Schedule time
+              <input
+                type="datetime-local"
+                className="mt-1 w-full rounded-xl border border-white/10 bg-ink-elevated px-3 py-2 text-sm text-white"
+                value={scheduledAt}
+                onChange={(e) => setScheduledAt(e.target.value)}
+              />
+            </label>
+            <div className="flex flex-col gap-2">
+              <button
+                disabled={busy || !scheduledAt}
+                className="rounded-xl border border-brand-secondary/40 px-4 py-2 text-sm text-brand-secondary disabled:opacity-50"
+                onClick={() => submit("SCHEDULED", false)}
+              >
+                Schedule with approval
+              </button>
+              <button
+                disabled={busy || !scheduledAt}
+                className="rounded-xl border border-white/15 px-4 py-2 text-sm disabled:opacity-50"
+                onClick={() => submit("SCHEDULED", true)}
+              >
+                Schedule without approval
+              </button>
+              <button
+                disabled={busy}
+                className="rounded-xl bg-[#3DDC97] px-4 py-2 text-sm font-semibold text-[#050814] disabled:opacity-50"
+                onClick={() => submit("PUBLISH_NOW", true)}
+              >
+                Push now (all selected networks)
+              </button>
+            </div>
           </div>
+
           {post ? (
             <p className="text-sm text-content-muted">
               Post {post.id} · status <span className="text-white">{post.status}</span>

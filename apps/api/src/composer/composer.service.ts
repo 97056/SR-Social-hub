@@ -373,8 +373,9 @@ export class ComposerService {
       return { post: updated, validation };
     }
 
-    if (dto.action === "SCHEDULED") {
-      if (post.status !== "APPROVED") {
+    if (dto.action === "SCHEDULED" || dto.action === "PUBLISH_NOW") {
+      const skipApproval = Boolean(dto.skipApproval) || post.status === "APPROVED";
+      if (!skipApproval) {
         await this.approvals.startApprovalFlow(postId, user.id);
         if (scheduledAt) {
           await this.prisma.contentPost.update({
@@ -384,6 +385,29 @@ export class ComposerService {
         }
         const pending = await this.getPost(postId, user);
         return { post: pending, validation };
+      }
+
+      if (dto.action === "PUBLISH_NOW") {
+        const updated = await this.prisma.contentPost.update({
+          where: { id: postId },
+          data: {
+            status: "APPROVED",
+            scheduledAt: null,
+            validationJson: validation as object,
+          },
+          include: this.postInclude(),
+        });
+        await this.prisma.auditLog.create({
+          data: {
+            actorId: user.id,
+            companyId: post.companyId,
+            action: "POST_APPROVED_DIRECT",
+            entityType: "ContentPost",
+            entityId: postId,
+            metadata: { validationOk: validation.ok, skipApproval: true },
+          },
+        });
+        return { post: updated, validation };
       }
 
       const updated = await this.prisma.contentPost.update({
@@ -406,7 +430,7 @@ export class ComposerService {
           action: "POST_SCHEDULED",
           entityType: "ContentPost",
           entityId: postId,
-          metadata: { validationOk: validation.ok },
+          metadata: { validationOk: validation.ok, skipApproval: true },
         },
       });
       return { post: updated, validation };

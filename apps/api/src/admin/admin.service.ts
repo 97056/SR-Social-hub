@@ -272,6 +272,7 @@ export class AdminService {
                 },
               },
             },
+            logoUrl: true,
             socialAccounts: {
               select: {
                 id: true,
@@ -280,6 +281,9 @@ export class AdminService {
                 username: true,
                 status: true,
                 createdAt: true,
+                updatedAt: true,
+                lastSyncedAt: true,
+                lastError: true,
               },
               orderBy: { platformCode: "asc" },
             },
@@ -347,6 +351,83 @@ export class AdminService {
         : company.plan?.name ?? "No plan",
       recentPosts,
     };
+  }
+
+  async getClientDetail(clientId: string) {
+    const client = await this.prisma.client.findUnique({
+      where: { id: clientId },
+      include: {
+        company: { select: { id: true, name: true, slug: true } },
+        members: {
+          where: { status: "ACTIVE" },
+          include: {
+            user: {
+              select: {
+                fullName: true,
+                email: true,
+                phone: true,
+                isActive: true,
+                lastLoginAt: true,
+              },
+            },
+          },
+        },
+        socialAccounts: {
+          orderBy: { updatedAt: "desc" },
+          select: {
+            id: true,
+            platformCode: true,
+            accountName: true,
+            username: true,
+            status: true,
+            connectionMode: true,
+            createdAt: true,
+            updatedAt: true,
+            lastSyncedAt: true,
+            lastError: true,
+            tokenExpiresAt: true,
+          },
+        },
+      },
+    });
+    if (!client || client.isArchived) throw new NotFoundException("Client not found");
+
+    const posts = await this.prisma.contentPost.findMany({
+      where: { clientId },
+      orderBy: [{ updatedAt: "desc" }],
+      take: 100,
+      include: {
+        mediaAsset: {
+          select: { id: true, kind: true, originalName: true, createdAt: true },
+        },
+        campaign: { select: { id: true, name: true } },
+        targets: {
+          select: {
+            platformCode: true,
+            status: true,
+            scheduledAt: true,
+            publishedAt: true,
+            externalPostId: true,
+            lastError: true,
+          },
+        },
+        approvals: {
+          orderBy: [{ revision: "desc" }, { createdAt: "desc" }],
+          select: {
+            id: true,
+            step: true,
+            decision: true,
+            comments: true,
+            revision: true,
+            createdAt: true,
+            decidedAt: true,
+            approver: { select: { fullName: true, email: true } },
+          },
+        },
+      },
+    });
+
+    return { client, posts };
   }
 
   async activateCompanyOwner(actor: AuthUser, companyId: string) {

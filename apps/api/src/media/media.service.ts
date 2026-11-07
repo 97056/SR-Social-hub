@@ -131,10 +131,11 @@ export class MediaService {
     const asset = await this.getAuthorized(assetId, user);
     await this.assertCanManage(asset.companyId, user);
 
-    const inUse = await this.prisma.contentPost.count({ where: { mediaAssetId: assetId } });
-    if (inUse > 0) {
-      throw new BadRequestException("Media is attached to posts and cannot be deleted");
-    }
+    // Detach from posts first so delete always works from the media library.
+    await this.prisma.contentPost.updateMany({
+      where: { mediaAssetId: assetId },
+      data: { mediaAssetId: null },
+    });
 
     const abs = join(MEDIA_ROOT, asset.storageKey);
     if (existsSync(abs)) unlinkSync(abs);

@@ -176,7 +176,7 @@ function SocialAccountsInner() {
                     : "Automatic publishing supported when permissions allow")}
               </p>
 
-              <div className="mt-4 flex-1 space-y-3">
+              <div className="mt-4 space-y-3">
                 {accounts.map((account) => (
                   <div
                     key={account.id}

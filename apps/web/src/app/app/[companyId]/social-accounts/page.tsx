@@ -251,7 +251,7 @@ export default function CompanySocialAccountsPage() {
                     : "Publish text, image, and video when permissions allow")}
               </p>
 
-              <div className="mt-4 flex-1 space-y-2">
+              <div className="mt-4 space-y-2">
                 {accounts.map((account) => (
                   <div
                     key={account.id}

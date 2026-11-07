@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/shell";
+import { SocialPlatformIcon, PLATFORM_BRAND_COLOR } from "@/components/social-platform-icon";
 import { apiFetch, getToken } from "@/lib/api";
 import { adminNav } from "@/lib/nav";
 
@@ -103,11 +104,22 @@ export default function AdminIntegrationsPage() {
       </p>
       <div className="grid gap-4 lg:grid-cols-2">
         {items.map((item) => (
-          <div key={item.id} className="panel space-y-3 p-5">
+          <div
+            key={item.id}
+            className="panel space-y-3 p-5"
+            style={{
+              background: `linear-gradient(165deg, ${(PLATFORM_BRAND_COLOR[item.code] ?? "#7B5CFF")}14, var(--card) 45%)`,
+            }}
+          >
             <div className="flex items-center justify-between gap-3">
-              <div>
-                <h2 className="font-display text-lg font-semibold">{item.name}</h2>
-                <p className="text-xs text-content-muted">{item.code}</p>
+              <div className="flex items-center gap-3">
+                <span className="grid h-12 w-12 place-items-center rounded-2xl border border-white/10 bg-black/20">
+                  <SocialPlatformIcon code={item.code} className="h-7 w-7" />
+                </span>
+                <div>
+                  <h2 className="font-display text-lg font-semibold">{item.name}</h2>
+                  <p className="text-xs text-content-muted">{item.code}</p>
+                </div>
               </div>
               <label className="flex items-center gap-2 text-sm">
                 <input

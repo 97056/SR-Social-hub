@@ -2,6 +2,7 @@ import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 import { SocialPlatformCode } from "@prisma/client";
 import {
   IsArray,
+  IsBoolean,
   IsDateString,
   IsEnum,
   IsOptional,
@@ -152,10 +153,19 @@ export class UpdatePostDto {
 }
 
 export class SubmitPostDto {
-  @ApiPropertyOptional({ enum: ["DRAFT", "PENDING_APPROVAL", "SCHEDULED"] })
+  @ApiPropertyOptional({
+    enum: ["DRAFT", "PENDING_APPROVAL", "SCHEDULED", "PUBLISH_NOW"],
+  })
   @IsOptional()
-  @IsEnum(["DRAFT", "PENDING_APPROVAL", "SCHEDULED"])
-  action?: "DRAFT" | "PENDING_APPROVAL" | "SCHEDULED";
+  @IsEnum(["DRAFT", "PENDING_APPROVAL", "SCHEDULED", "PUBLISH_NOW"])
+  action?: "DRAFT" | "PENDING_APPROVAL" | "SCHEDULED" | "PUBLISH_NOW";
+
+  @ApiPropertyOptional({
+    description: "When scheduling/publishing, skip client/company approval and go live",
+  })
+  @IsOptional()
+  @IsBoolean()
+  skipApproval?: boolean;
 
   @ApiPropertyOptional()
   @IsOptional()

@@ -32,12 +32,29 @@ function formatWhen(value?: string | null) {
   return new Date(value).toLocaleString();
 }
 
+function inRange(iso: string | null | undefined, from: string, to: string) {
+  if (!from && !to) return true;
+  const t = iso ? new Date(iso).getTime() : NaN;
+  if (Number.isNaN(t)) return false;
+  if (from && t < new Date(from).getTime()) return false;
+  if (to) {
+    const end = new Date(to);
+    end.setHours(23, 59, 59, 999);
+    if (t > end.getTime()) return false;
+  }
+  return true;
+}
+
 export default function PostsPage() {
   const params = useParams<{ companyId: string }>();
   const router = useRouter();
   const companyId = params.companyId;
   const [posts, setPosts] = useState<Post[]>([]);
   const [clientFilter, setClientFilter] = useState("ALL");
+  const [view, setView] = useState<"list" | "grid">("list");
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+  const [openId, setOpenId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
 
@@ -59,21 +76,14 @@ export default function PostsPage() {
     return Array.from(map.entries()).sort((a, b) => a[1].localeCompare(b[1]));
   }, [posts]);
 
-  const visible = useMemo(
-    () => (clientFilter === "ALL" ? posts : posts.filter((p) => p.client.id === clientFilter)),
-    [posts, clientFilter],
-  );
-
-  const grouped = useMemo(() => {
-    const map = new Map<string, Post[]>();
-    for (const p of visible) {
-      const key = p.client.name;
-      const list = map.get(key) ?? [];
-      list.push(p);
-      map.set(key, list);
-    }
-    return Array.from(map.entries()).sort((a, b) => a[0].localeCompare(b[0]));
-  }, [visible]);
+  const visible = useMemo(() => {
+    return posts.filter((p) => {
+      if (clientFilter !== "ALL" && p.client.id !== clientFilter) return false;
+      const published = p.targets.find((t) => t.publishedAt)?.publishedAt;
+      const anchor = published || p.scheduledAt || p.updatedAt || p.createdAt;
+      return inRange(anchor, from, to);
+    });
+  }, [posts, clientFilter, from, to]);
 
   async function publishNow(postId: string) {
     setBusy(postId);
@@ -96,22 +106,16 @@ export default function PostsPage() {
     <AppShell title="Posts" subtitle="Client-wise publishing history" nav={companyNav(companyId)}>
       {error ? <p className="mb-4 text-sm text-brand-error">{error}</p> : null}
       <div className="mb-4 flex flex-wrap items-end gap-3">
-        <button
-          className="rounded-xl bg-brand-primary px-4 py-2 text-sm font-semibold text-white"
-          onClick={() => router.push(`/app/${companyId}/create`)}
-        >
+        <button className="btn-primary" onClick={() => router.push(`/app/${companyId}/create`)}>
           Create post
         </button>
-        <button
-          className="rounded-xl border border-white/15 px-4 py-2 text-sm font-semibold text-white"
-          onClick={() => router.push(`/app/${companyId}/publishing`)}
-        >
+        <button className="btn-ghost" onClick={() => router.push(`/app/${companyId}/publishing`)}>
           Publishing queue
         </button>
-        <label className="ml-auto block text-xs text-content-muted">
-          Filter by client
+        <label className="text-xs text-content-muted">
+          Client
           <select
-            className="mt-1 block min-w-[200px] rounded-xl border border-white/10 bg-ink-elevated px-3 py-2 text-sm text-white"
+            className="mt-1 block min-w-[160px] rounded-xl border border-white/10 bg-ink-elevated px-3 py-2 text-sm"
             value={clientFilter}
             onChange={(e) => setClientFilter(e.target.value)}
           >
@@ -123,98 +127,132 @@ export default function PostsPage() {
             ))}
           </select>
         </label>
+        <label className="text-xs text-content-muted">
+          From
+          <input
+            type="date"
+            className="mt-1 block rounded-xl border border-white/10 bg-ink-elevated px-3 py-2 text-sm"
+            value={from}
+            onChange={(e) => setFrom(e.target.value)}
+          />
+        </label>
+        <label className="text-xs text-content-muted">
+          To
+          <input
+            type="date"
+            className="mt-1 block rounded-xl border border-white/10 bg-ink-elevated px-3 py-2 text-sm"
+            value={to}
+            onChange={(e) => setTo(e.target.value)}
+          />
+        </label>
+        <div className="ml-auto flex rounded-xl border border-white/10 p-0.5 text-xs">
+          <button
+            type="button"
+            className={`rounded-lg px-3 py-1.5 ${view === "list" ? "bg-white/10" : "text-content-muted"}`}
+            onClick={() => setView("list")}
+          >
+            List
+          </button>
+          <button
+            type="button"
+            className={`rounded-lg px-3 py-1.5 ${view === "grid" ? "bg-white/10" : "text-content-muted"}`}
+            onClick={() => setView("grid")}
+          >
+            Grid
+          </button>
+        </div>
       </div>
 
-      <div className="space-y-8">
-        {grouped.map(([clientName, rows]) => (
-          <section key={clientName}>
-            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-              <h2 className="font-display text-lg font-semibold text-[var(--text)]">{clientName}</h2>
-              <span className="rounded-lg bg-white/5 px-2 py-1 text-[11px] text-content-muted">
-                {rows.length} post{rows.length === 1 ? "" : "s"}
-              </span>
-            </div>
-            <div className="space-y-3">
-              {rows.map((p) => (
-                <article key={p.id} className="panel p-4 sm:p-5">
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div className="min-w-0 flex-1">
-                      <p className="whitespace-pre-wrap text-sm leading-6">{p.baseCaption || "—"}</p>
-                      {p.baseHashtags ? (
-                        <p className="mt-1 text-xs text-brand-primary">{p.baseHashtags}</p>
-                      ) : null}
-                      <p className="mt-2 text-xs text-content-muted">
-                        Scheduled {formatWhen(p.scheduledAt)} · Updated {formatWhen(p.updatedAt)}
-                      </p>
-                    </div>
-                    <div className="flex flex-col items-end gap-2">
-                      <span className="rounded-lg bg-white/5 px-2 py-1 text-[10px] font-bold uppercase tracking-wide">
-                        {p.status}
-                      </span>
-                      {["APPROVED", "FAILED", "SCHEDULED"].includes(p.status) ? (
-                        <button
-                          className="rounded-lg bg-brand-primary px-3 py-1.5 text-xs font-semibold text-[#050814] disabled:opacity-50"
-                          disabled={busy === p.id}
-                          onClick={() => publishNow(p.id)}
-                        >
-                          {busy === p.id ? "Queuing…" : "Publish now"}
-                        </button>
-                      ) : p.status === "PUBLISHING" || p.status === "PUBLISHED" ? (
-                        <button
-                          className="rounded-lg border border-white/15 px-3 py-1.5 text-xs"
-                          onClick={() => router.push(`/app/${companyId}/publishing`)}
-                        >
-                          View queue
-                        </button>
-                      ) : null}
-                    </div>
-                  </div>
+      <div className={view === "grid" ? "grid gap-3 sm:grid-cols-2 xl:grid-cols-3" : "space-y-3"}>
+        {visible.map((p) => {
+          const open = openId === p.id;
+          return (
+            <article key={p.id} className="panel p-4">
+              <button
+                type="button"
+                className="flex w-full flex-wrap items-start justify-between gap-3 text-left"
+                onClick={() => setOpenId(open ? null : p.id)}
+              >
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-brand-primary">
+                    {p.client.name}
+                  </p>
+                  <p className="mt-1 line-clamp-3 text-sm font-medium">{p.baseCaption || "—"}</p>
+                  <p className="mt-2 text-xs text-content-muted">
+                    Updated {formatWhen(p.updatedAt)}
+                    {p.scheduledAt ? ` · Scheduled ${formatWhen(p.scheduledAt)}` : ""}
+                  </p>
+                </div>
+                <span className="rounded-lg bg-white/5 px-2 py-1 text-[10px] font-bold uppercase">
+                  {p.status}
+                </span>
+              </button>
 
-                  <div className="mt-4 space-y-2 border-t border-[var(--border)] pt-3">
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-content-muted">
-                      Networks
-                    </p>
-                    {p.targets.length ? (
-                      p.targets.map((t) => (
-                        <div
-                          key={`${p.id}-${t.platformCode}-${t.externalPostId ?? t.status}`}
-                          className="flex flex-wrap items-center gap-2 text-sm"
-                        >
-                          <SocialPlatformIcon code={t.platformCode} className="h-5 w-5" />
-                          <span className="font-medium">{t.platformCode}</span>
-                          {t.status ? (
-                            <span className="rounded-md bg-white/5 px-1.5 py-0.5 text-[10px] uppercase">
-                              {t.status}
-                            </span>
-                          ) : null}
-                          <span className="text-xs text-content-muted">
-                            {t.publishedAt
-                              ? `Published ${formatWhen(t.publishedAt)}`
-                              : t.scheduledAt
-                                ? `Scheduled ${formatWhen(t.scheduledAt)}`
-                                : "—"}
-                          </span>
-                          {t.externalPostId ? (
-                            <span className="font-mono text-[10px] text-content-muted">
-                              ID {t.externalPostId}
-                            </span>
-                          ) : null}
-                          {t.lastError ? (
-                            <span className="w-full text-xs text-brand-error">{t.lastError}</span>
-                          ) : null}
-                        </div>
-                      ))
-                    ) : (
-                      <p className="text-xs text-content-muted">No targets</p>
-                    )}
-                  </div>
-                </article>
-              ))}
-            </div>
-          </section>
-        ))}
+              {open ? (
+                <div className="mt-4 space-y-3 border-t border-[var(--border)] pt-3 text-sm">
+                  {p.baseHashtags ? (
+                    <p className="text-xs text-brand-primary">{p.baseHashtags}</p>
+                  ) : null}
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-content-muted">
+                    Networks & status
+                  </p>
+                  {p.targets.length ? (
+                    p.targets.map((t) => (
+                      <div
+                        key={`${p.id}-${t.platformCode}-${t.externalPostId ?? t.status}`}
+                        className="flex flex-wrap items-center gap-2"
+                      >
+                        <SocialPlatformIcon code={t.platformCode} className="h-5 w-5" />
+                        <span className="font-medium">{t.platformCode}</span>
+                        <span className="rounded-md bg-white/5 px-1.5 py-0.5 text-[10px] uppercase">
+                          {t.status ?? "—"}
+                        </span>
+                        <span className="text-xs text-content-muted">
+                          {t.publishedAt
+                            ? `Published ${formatWhen(t.publishedAt)}`
+                            : t.scheduledAt
+                              ? `Scheduled ${formatWhen(t.scheduledAt)}`
+                              : "—"}
+                        </span>
+                        {t.lastError ? (
+                          <span className="w-full text-xs text-brand-error">{t.lastError}</span>
+                        ) : null}
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-xs text-content-muted">No targets</p>
+                  )}
+                  <p className="text-xs text-content-muted">
+                    Approval / workflow status: <strong className="text-[var(--text)]">{p.status}</strong>
+                  </p>
+                  {["APPROVED", "FAILED", "SCHEDULED"].includes(p.status) ? (
+                    <button
+                      className="rounded-lg bg-brand-primary px-3 py-1.5 text-xs font-semibold text-[#050814] disabled:opacity-50"
+                      disabled={busy === p.id}
+                      onClick={() => publishNow(p.id)}
+                    >
+                      {busy === p.id ? "Queuing…" : "Publish now"}
+                    </button>
+                  ) : null}
+                </div>
+              ) : (
+                <div className="mt-3 flex flex-wrap gap-1">
+                  {p.targets.slice(0, 6).map((t) => (
+                    <SocialPlatformIcon
+                      key={`${p.id}-${t.platformCode}`}
+                      code={t.platformCode}
+                      className="h-4 w-4"
+                    />
+                  ))}
+                </div>
+              )}
+            </article>
+          );
+        })}
         {!visible.length ? (
-          <div className="panel p-6 text-sm text-content-muted">No posts yet for this filter.</div>
+          <div className="panel p-6 text-sm text-content-muted sm:col-span-full">
+            No posts for this filter / date range.
+          </div>
         ) : null}
       </div>
     </AppShell>
