@@ -1,0 +1,12 @@
+# Server-only override for Annadatha edge nginx.
+# Place at: /opt/annadatha-bazar/docker-compose.override.yml
+# This file is NOT part of Annadatha git — it only mounts SR Social Hub's
+# independent API vhost so Annadatha template/deploy changes cannot wipe it.
+#
+# SR frontend stays on Hostinger Git webapp (srsocialhub.in).
+# SR API + DB stay under /opt/sr-social-hub (separate compose).
+
+services:
+  nginx:
+    volumes:
+      - /opt/sr-social-hub/deploy/nginx/api.srsocialhub.in.conf:/etc/nginx/conf.d/sr-api.conf:ro
