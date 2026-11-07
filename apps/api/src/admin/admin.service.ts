@@ -272,7 +272,6 @@ export class AdminService {
                 },
               },
             },
-            logoUrl: true,
             socialAccounts: {
               select: {
                 id: true,
