@@ -1,9 +1,25 @@
 import { Controller, Get } from "@nestjs/common";
 import { ApiTags } from "@nestjs/swagger";
+import { AdminService } from "../admin/admin.service";
 
 @ApiTags("public")
 @Controller("public")
 export class PublicController {
+  constructor(private readonly admin: AdminService) {}
+
+  @Get("status")
+  async status() {
+    const [settings, branding] = await Promise.all([
+      this.admin.getSystemSettings(),
+      this.admin.getBranding(),
+    ]);
+    return {
+      maintenanceMode: Boolean(settings.maintenanceMode),
+      platformName: branding.platformName ?? "SR Social Hub",
+      supportEmail: branding.supportEmail ?? "support@srsocialhub.in",
+    };
+  }
+
   @Get("integration-urls")
   integrationUrls() {
     const web = process.env.WEB_URL ?? "https://srsocialhub.in";

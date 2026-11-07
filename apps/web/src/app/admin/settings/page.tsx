@@ -77,14 +77,20 @@ export default function AdminSettingsPage() {
               onChange={(e) => setForm({ ...form, inviteExpiryHours: Number(e.target.value) })}
             />
           </label>
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={form.maintenanceMode}
-              onChange={(e) => setForm({ ...form, maintenanceMode: e.target.checked })}
-            />
-            Maintenance mode
-          </label>
+          <div className="space-y-1">
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={form.maintenanceMode}
+                onChange={(e) => setForm({ ...form, maintenanceMode: e.target.checked })}
+              />
+              Maintenance mode
+            </label>
+            <p className="pl-6 text-xs text-content-muted">
+              When on, every visitor is redirected to the maintenance page. Super Admin routes
+              (/admin) stay available so you can turn this off.
+            </p>
+          </div>
           <div className="space-y-2">
             <p className="text-xs uppercase tracking-[0.18em] text-content-muted">Feature flags</p>
             {Object.entries(form.featureFlags).map(([key, enabled]) => (
