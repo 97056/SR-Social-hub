@@ -173,20 +173,51 @@ export default function PrivacyPage() {
         data. Analytics, if enabled, is limited to understanding product health and usage patterns.
       </p>
 
-      <h2>13. Changes to this policy</h2>
+      <h2>13. Complaints and tickets</h2>
+      <p>
+        If you believe we mishandled personal data, or you hit a product mistake that affects your
+        privacy or account, please tell us. Email{" "}
+        <a className="text-brand-secondary underline" href="mailto:support@srsocialhub.in">
+          support@srsocialhub.in
+        </a>{" "}
+        or use{" "}
+        <a className="text-brand-secondary underline" href="/support">
+          Support
+        </a>{" "}
+        to open a complaint / ticket. Include enough detail for us to find your account and the issue.
+        We take genuine reports seriously and will work to correct what we can. Raising a ticket does
+        not, by itself, create liability beyond what the law and our{" "}
+        <a className="text-brand-secondary underline" href="/terms">
+          Terms of Service
+        </a>{" "}
+        already describe.
+      </p>
+
+      <h2>14. Product mistakes and organization responsibility</h2>
+      <p>
+        Displays, exports, analysis results, and automated actions can be wrong or incomplete. Social
+        networks, payment partners, and hosting providers can fail independently of us. To the extent
+        allowed by law, SR Social Hub and the organization operating this domain are not responsible
+        for harm that comes only from relying on an incorrect screen, a delayed job, a third-party
+        outage, or an official app / APK related to srsocialhub.in. Please verify critical actions and
+        contact support when something looks off. Full liability limits and disclaimers live in the
+        Terms of Service.
+      </p>
+
+      <h2>15. Changes to this policy</h2>
       <p>
         When we update this Policy in a material way, we will revise the date at the top of the page
         and, where appropriate, notify account owners by email or an in-product notice. Continued use
         after the effective date means the updated Policy applies.
       </p>
 
-      <h2>14. Contact</h2>
+      <h2>16. Contact</h2>
       <p>
         Privacy and data requests:{" "}
         <a className="text-brand-secondary underline" href="mailto:support@srsocialhub.in">
           support@srsocialhub.in
         </a>
-        . Product help:{" "}
+        . Product help and complaints:{" "}
         <a className="text-brand-secondary underline" href="/support">
           Support
         </a>

@@ -114,15 +114,79 @@ export default function TermsPage() {
         service except to the extent the law forbids that restriction.
       </p>
 
-      <h2>10. Disclaimers</h2>
+      <h2>10. Mistakes, accuracy, and product limits</h2>
       <p>
-        The service is provided on an “as is” and “as available” basis. To the fullest extent allowed
-        by law, we disclaim warranties of merchantability, fitness for a particular purpose, and
-        non-infringement. We do not warrant uninterrupted uptime, error-free publishing, or that
-        third-party APIs will remain compatible forever.
+        Software can make mistakes. SR Social Hub may show wrong statuses, delayed queues, incomplete
+        profiles, failed or partial publishes, outdated analytics, incorrect plan counters, or AI /
+        analysis suggestions that do not match the real world. Third-party platforms can also reject
+        content, revoke tokens, or change rules without notice. You agree to double-check important
+        captions, media, schedules, billing amounts, and account connections before you rely on them.
+        Nothing in the product is a guarantee of reach, revenue, compliance, or uninterrupted service.
       </p>
 
-      <h2>11. Limitation of liability</h2>
+      <h2>11. Complaints, tickets, and how we help</h2>
+      <p>
+        If something goes wrong — a bug, a billing doubt, a privacy request, a publishing failure, or
+        any other issue — raise it with us so we can investigate. The fastest path is:
+      </p>
+      <ul>
+        <li>
+          Email{" "}
+          <a className="text-brand-secondary underline" href="mailto:support@srsocialhub.in">
+            support@srsocialhub.in
+          </a>{" "}
+          with your account email, company or client name, what you expected, what happened, and
+          screenshots or job IDs when you have them.
+        </li>
+        <li>
+          Or open a complaint / support ticket through{" "}
+          <a className="text-brand-secondary underline" href="/support">
+            Support
+          </a>
+          .
+        </li>
+      </ul>
+      <p>
+        We will use reasonable efforts to acknowledge genuine tickets and work toward a fix or a clear
+        explanation. Filing a ticket does not create a promise of refund, damages, or a specific
+        timeline beyond what the law requires. Urgent security or data-deletion requests should say so
+        in the subject line.
+      </p>
+
+      <h2>12. Disclaimers</h2>
+      <p>
+        The website, APIs, dashboards, mobile or desktop apps, APKs, installers, browser extensions,
+        and any other software published under the srsocialhub.in domain (or official SR Social Hub
+        brand channels) are provided on an “as is” and “as available” basis. To the fullest extent
+        allowed by law, we disclaim warranties of merchantability, fitness for a particular purpose,
+        and non-infringement. We do not warrant uninterrupted uptime, error-free publishing, accurate
+        forecasts, or that third-party APIs will remain compatible forever.
+      </p>
+
+      <h2>13. No responsibility for issues arising from use</h2>
+      <p>
+        By using this website or any related app / APK / client tied to this domain, you acknowledge
+        that SR Social Hub, its operators, owners, employees, contractors, and the organization behind
+        the product are <strong>not responsible</strong> for losses, disputes, account bans, rejected
+        posts, reputational harm, business interruption, device problems, data loss, or other issues
+        you may face because of:
+      </p>
+      <ul>
+        <li>Bugs, downtime, maintenance windows, or incorrect displays in our product.</li>
+        <li>Actions or failures of Meta, LinkedIn, X, Google/YouTube, Pinterest, Threads, payment
+          providers, hosting providers, or other third parties.</li>
+        <li>Content you or your team wrote, approved, scheduled, or published.</li>
+        <li>Misconfigured connections, weak passwords, unauthorized teammate invites, or device
+          malware outside our control.</li>
+        <li>Downloading or installing any APK or app distributed for this product, including install
+          conflicts, OS permission prompts, or store policy outcomes.</li>
+      </ul>
+      <p>
+        Where local law still gives you non-waivable consumer rights, those rights stay intact. This
+        section is meant to be read together with the limitation of liability below.
+      </p>
+
+      <h2>14. Limitation of liability</h2>
       <p>
         To the fullest extent permitted by law, SR Social Hub and its operators will not be liable for
         indirect, incidental, special, consequential, exemplary, or lost-profit damages, or for loss
@@ -132,14 +196,14 @@ export default function TermsPage() {
         certain limitations; in those places, our liability is limited to the maximum extent allowed.
       </p>
 
-      <h2>12. Indemnity</h2>
+      <h2>15. Indemnity</h2>
       <p>
         You will defend and indemnify SR Social Hub against claims arising from your content, your
         connected accounts, your misuse of the service, or your violation of law or these Terms,
         including reasonable legal fees.
       </p>
 
-      <h2>13. Suspension and termination</h2>
+      <h2>16. Suspension and termination</h2>
       <p>
         You may stop using the service at any time. We may suspend or terminate access for breach,
         non-payment, legal risk, or prolonged inactivity on trial accounts. After termination, we may
@@ -147,25 +211,29 @@ export default function TermsPage() {
         law.
       </p>
 
-      <h2>14. Governing law</h2>
+      <h2>17. Governing law</h2>
       <p>
         These Terms are governed by the laws of India, without regard to conflict-of-law rules.
         Courts in India will have exclusive jurisdiction, except where consumer protection law gives
         you mandatory rights in your home country.
       </p>
 
-      <h2>15. Changes</h2>
+      <h2>18. Changes</h2>
       <p>
         We may update these Terms as the product evolves. Material changes will be marked with a new
         date and, where practical, communicated to account owners. Continued use after the update
         means you accept the revised Terms.
       </p>
 
-      <h2>16. Contact</h2>
+      <h2>19. Contact</h2>
       <p>
-        Questions about these Terms:{" "}
+        Questions about these Terms, or to file a complaint / ticket:{" "}
         <a className="text-brand-secondary underline" href="mailto:support@srsocialhub.in">
           support@srsocialhub.in
+        </a>{" "}
+        ·{" "}
+        <a className="text-brand-secondary underline" href="/support">
+          Support
         </a>
         .
       </p>
