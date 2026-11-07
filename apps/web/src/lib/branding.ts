@@ -8,6 +8,12 @@ export type PublicBranding = {
   loginSubcopy: string;
   supportEmail: string;
   themeDefault: string;
+  seoTitle?: string;
+  seoDescription?: string;
+  seoAuthor?: string;
+  seoPublisher?: string;
+  /** Comma-separated keyword pool; site rotates a subset every day. */
+  seoKeywordPool?: string;
 };
 
 export const FALLBACK_BRANDING: PublicBranding = {
@@ -21,6 +27,12 @@ export const FALLBACK_BRANDING: PublicBranding = {
     "Draft, approve, and publish across your networks from one neon command — without the tab chaos.",
   supportEmail: "support@srsocialhub.in",
   themeDefault: "dark",
+  seoTitle: "SR Social Hub — Agency Social Media Command Center",
+  seoDescription:
+    "All-in-one social media management for agencies — create, approve, and publish across Facebook, Instagram, LinkedIn, X, YouTube, Pinterest, and Threads.",
+  seoAuthor: "SR Social Hub",
+  seoPublisher: "SR Social Hub",
+  seoKeywordPool: "",
 };
 
 export async function fetchPublicBranding(): Promise<PublicBranding> {

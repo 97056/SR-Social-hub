@@ -3,8 +3,10 @@
 import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/shell";
+import { toast } from "@/components/toast";
 import { apiFetch, getToken } from "@/lib/api";
 import { adminNav } from "@/lib/nav";
+import { DEFAULT_KEYWORD_POOL } from "@/lib/seo";
 
 type Branding = {
   platformName: string;
@@ -16,6 +18,11 @@ type Branding = {
   loginSubcopy: string;
   supportEmail: string;
   themeDefault: string;
+  seoTitle: string;
+  seoDescription: string;
+  seoAuthor: string;
+  seoPublisher: string;
+  seoKeywordPool: string;
 };
 
 const ASSET_HINTS = [
@@ -23,6 +30,12 @@ const ASSET_HINTS = [
   { path: "/brand/logo-mark.png", label: "Profile / square mark — recommended 512×512 PNG" },
   { path: "/brand/favicon.png", label: "Favicon — browser tab icon" },
 ];
+
+function applyThemeNow(theme: "dark" | "light") {
+  localStorage.setItem("sr_theme", theme);
+  document.documentElement.classList.toggle("light", theme === "light");
+  document.documentElement.classList.toggle("dark", theme === "dark");
+}
 
 export default function AdminBrandingPage() {
   const router = useRouter();
@@ -35,8 +48,27 @@ export default function AdminBrandingPage() {
       router.replace("/admin/login");
       return;
     }
-    apiFetch<Branding>("/admin/branding")
-      .then(setForm)
+    apiFetch<Partial<Branding>>("/admin/branding")
+      .then((data) =>
+        setForm({
+          platformName: data.platformName ?? "SR Social Hub",
+          primaryColor: data.primaryColor ?? "#00D2FF",
+          secondaryColor: data.secondaryColor ?? "#C026FF",
+          logoUrl: data.logoUrl ?? "/brand/logo.png",
+          faviconUrl: data.faviconUrl ?? "/brand/favicon.png",
+          loginHeadline: data.loginHeadline ?? "",
+          loginSubcopy: data.loginSubcopy ?? "",
+          supportEmail: data.supportEmail ?? "support@srsocialhub.in",
+          themeDefault: data.themeDefault === "light" ? "light" : "dark",
+          seoTitle: data.seoTitle ?? "SR Social Hub — Agency Social Media Command Center",
+          seoDescription:
+            data.seoDescription ??
+            "All-in-one social media management for agencies — create, approve, and publish across Facebook, Instagram, LinkedIn, X, YouTube, Pinterest, and Threads.",
+          seoAuthor: data.seoAuthor ?? "SR Social Hub",
+          seoPublisher: data.seoPublisher ?? "SR Social Hub",
+          seoKeywordPool: data.seoKeywordPool ?? DEFAULT_KEYWORD_POOL.join(", "),
+        }),
+      )
       .catch((e: Error) => setError(e.message));
   }, [router]);
 
@@ -50,8 +82,17 @@ export default function AdminBrandingPage() {
         method: "PATCH",
         body: JSON.stringify(form),
       });
-      setForm(saved);
-      setMessage("Branding saved. Landing page + public /api/v1/branding now use these values.");
+      setForm({
+        ...form,
+        ...saved,
+        themeDefault: saved.themeDefault === "light" ? "light" : "dark",
+      });
+      const theme = saved.themeDefault === "light" ? "light" : "dark";
+      applyThemeNow(theme);
+      setMessage(
+        `Branding saved. Default theme (${theme}) applied across the app for this browser. SEO meta + daily keyword rotation are live.`,
+      );
+      toast.success("Branding saved", `Theme set to ${theme}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Save failed");
     }
@@ -100,45 +141,94 @@ export default function AdminBrandingPage() {
 
       {form ? (
         <form onSubmit={onSubmit} className="grid gap-5 lg:grid-cols-[1fr_280px]">
-          <div className="panel grid gap-3 p-5 md:grid-cols-2">
-            {(
-              [
-                ["platformName", "Platform name"],
-                ["primaryColor", "Primary color"],
-                ["secondaryColor", "Secondary color"],
-                ["logoUrl", "Logo URL"],
-                ["faviconUrl", "Favicon URL"],
-                ["supportEmail", "Support email"],
-                ["loginHeadline", "Login / landing headline"],
-                ["loginSubcopy", "Login / landing subcopy"],
-              ] as const
-            ).map(([key, label]) => (
-              <label
-                key={key}
-                className={`block text-xs text-content-muted ${
-                  key.includes("login") || key.includes("Sub") ? "md:col-span-2" : ""
-                }`}
-              >
-                {label}
+          <div className="space-y-5">
+            <div className="panel grid gap-3 p-5 md:grid-cols-2">
+              {(
+                [
+                  ["platformName", "Platform name"],
+                  ["primaryColor", "Primary color"],
+                  ["secondaryColor", "Secondary color"],
+                  ["logoUrl", "Logo URL"],
+                  ["faviconUrl", "Favicon URL"],
+                  ["supportEmail", "Support email"],
+                  ["loginHeadline", "Login / landing headline"],
+                  ["loginSubcopy", "Login / landing subcopy"],
+                ] as const
+              ).map(([key, label]) => (
+                <label
+                  key={key}
+                  className={`block text-xs text-content-muted ${
+                    key.includes("login") || key.includes("Sub") ? "md:col-span-2" : ""
+                  }`}
+                >
+                  {label}
+                  <input
+                    className="mt-1 w-full rounded-xl border border-white/10 bg-ink-elevated px-3 py-2 text-sm text-white"
+                    value={form[key]}
+                    onChange={(e) => setForm({ ...form, [key]: e.target.value })}
+                  />
+                </label>
+              ))}
+              <label className="block text-xs text-content-muted md:col-span-2">
+                Default theme (applies project-wide for users without a personal toggle)
+                <select
+                  className="mt-1 w-full rounded-xl border border-white/10 bg-ink-elevated px-3 py-2 text-sm text-white"
+                  value={form.themeDefault}
+                  onChange={(e) => setForm({ ...form, themeDefault: e.target.value })}
+                >
+                  <option value="dark">Dark</option>
+                  <option value="light">Light</option>
+                </select>
+              </label>
+            </div>
+
+            <div className="panel grid gap-3 p-5 md:grid-cols-2">
+              <p className="md:col-span-2 text-xs font-semibold uppercase tracking-[0.2em] text-content-muted">
+                SEO (sitewide)
+              </p>
+              <label className="block text-xs text-content-muted md:col-span-2">
+                Page title (50–60 chars ideal)
                 <input
                   className="mt-1 w-full rounded-xl border border-white/10 bg-ink-elevated px-3 py-2 text-sm text-white"
-                  value={form[key]}
-                  onChange={(e) => setForm({ ...form, [key]: e.target.value })}
+                  value={form.seoTitle}
+                  onChange={(e) => setForm({ ...form, seoTitle: e.target.value })}
                 />
               </label>
-            ))}
-            <label className="block text-xs text-content-muted">
-              Default theme
-              <select
-                className="mt-1 w-full rounded-xl border border-white/10 bg-ink-elevated px-3 py-2 text-sm text-white"
-                value={form.themeDefault}
-                onChange={(e) => setForm({ ...form, themeDefault: e.target.value })}
-              >
-                <option value="dark">Dark</option>
-                <option value="light">Light</option>
-              </select>
-            </label>
-            <button className="rounded-xl bg-brand-primary px-4 py-3 text-sm font-semibold text-ink-bg md:col-span-2">
+              <label className="block text-xs text-content-muted md:col-span-2">
+                Meta description
+                <textarea
+                  className="mt-1 min-h-[88px] w-full rounded-xl border border-white/10 bg-ink-elevated px-3 py-2 text-sm text-white"
+                  value={form.seoDescription}
+                  onChange={(e) => setForm({ ...form, seoDescription: e.target.value })}
+                />
+              </label>
+              <label className="block text-xs text-content-muted">
+                Author
+                <input
+                  className="mt-1 w-full rounded-xl border border-white/10 bg-ink-elevated px-3 py-2 text-sm text-white"
+                  value={form.seoAuthor}
+                  onChange={(e) => setForm({ ...form, seoAuthor: e.target.value })}
+                />
+              </label>
+              <label className="block text-xs text-content-muted">
+                Publisher
+                <input
+                  className="mt-1 w-full rounded-xl border border-white/10 bg-ink-elevated px-3 py-2 text-sm text-white"
+                  value={form.seoPublisher}
+                  onChange={(e) => setForm({ ...form, seoPublisher: e.target.value })}
+                />
+              </label>
+              <label className="block text-xs text-content-muted md:col-span-2">
+                Keyword pool (comma-separated — a fresh subset rotates every day)
+                <textarea
+                  className="mt-1 min-h-[100px] w-full rounded-xl border border-white/10 bg-ink-elevated px-3 py-2 text-sm text-white"
+                  value={form.seoKeywordPool}
+                  onChange={(e) => setForm({ ...form, seoKeywordPool: e.target.value })}
+                />
+              </label>
+            </div>
+
+            <button className="w-full rounded-xl bg-brand-primary px-4 py-3 text-sm font-semibold text-ink-bg">
               Save branding
             </button>
           </div>
@@ -152,6 +242,7 @@ export default function AdminBrandingPage() {
               <img
                 src={form.logoUrl || "/brand/logo.png"}
                 alt="Logo preview"
+                title="Logo preview"
                 className="h-28 w-28 rounded-full object-cover"
               />
               <p className="text-center text-sm font-semibold text-white">{form.platformName}</p>
@@ -162,6 +253,7 @@ export default function AdminBrandingPage() {
               <img
                 src={form.faviconUrl || "/brand/favicon.png"}
                 alt="Favicon preview"
+                title="Favicon preview"
                 className="h-8 w-8 rounded object-cover"
               />
               <div>

@@ -7,6 +7,11 @@ export type CompanyEntitlements = {
   companyStatus: string;
   planCode: string | null;
   planName: string | null;
+  /** True while on free trial (before paid activation). */
+  isTrialing: boolean;
+  /** Catalog plan sitting under the trial (e.g. STARTER) — not the active paid plan. */
+  catalogPlanCode: string | null;
+  catalogPlanName: string | null;
   subscriptionStatus: string | null;
   interval: string | null;
   trialEndsAt: string | null;
@@ -125,8 +130,12 @@ export class EntitlementsService {
     return {
       companyId,
       companyStatus: company.status,
-      planCode: plan?.code ?? null,
-      planName: plan?.name ?? null,
+      // While trialing, surface Free Trial — not the underlying catalog plan name.
+      planCode: isTrialing ? "TRIAL" : (plan?.code ?? null),
+      planName: isTrialing ? "Free Trial" : (plan?.name ?? null),
+      isTrialing,
+      catalogPlanCode: plan?.code ?? null,
+      catalogPlanName: plan?.name ?? null,
       subscriptionStatus: subscription?.status ?? null,
       interval: subscription?.interval ?? null,
       trialEndsAt: trialEndsAt?.toISOString() ?? null,

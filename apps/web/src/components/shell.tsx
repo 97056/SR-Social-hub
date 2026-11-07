@@ -40,22 +40,41 @@ type NotifItem = {
   createdAt: string;
 };
 
+function applyDocumentTheme(next: "dark" | "light") {
+  document.documentElement.classList.toggle("light", next === "light");
+  document.documentElement.classList.toggle("dark", next === "dark");
+}
+
 function useTheme() {
   const [theme, setTheme] = useState<"dark" | "light">("dark");
 
   useEffect(() => {
-    const stored = (localStorage.getItem("sr_theme") as "dark" | "light" | null) || "dark";
-    setTheme(stored);
-    document.documentElement.classList.toggle("light", stored === "light");
-    document.documentElement.classList.toggle("dark", stored === "dark");
+    const stored = localStorage.getItem("sr_theme") as "dark" | "light" | null;
+    if (stored === "light" || stored === "dark") {
+      setTheme(stored);
+      applyDocumentTheme(stored);
+      return;
+    }
+
+    const api = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
+    fetch(`${api}/api/v1/branding`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: { themeDefault?: string } | null) => {
+        const next = data?.themeDefault === "light" ? "light" : "dark";
+        localStorage.setItem("sr_theme", next);
+        setTheme(next);
+        applyDocumentTheme(next);
+      })
+      .catch(() => {
+        applyDocumentTheme("dark");
+      });
   }, []);
 
   function toggle() {
     const next = theme === "dark" ? "light" : "dark";
     setTheme(next);
     localStorage.setItem("sr_theme", next);
-    document.documentElement.classList.toggle("light", next === "light");
-    document.documentElement.classList.toggle("dark", next === "dark");
+    applyDocumentTheme(next);
   }
 
   return { theme, toggle };

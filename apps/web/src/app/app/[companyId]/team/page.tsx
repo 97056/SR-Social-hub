@@ -18,9 +18,9 @@ export default function CompanyTeamPage() {
   const router = useRouter();
   const companyId = params.companyId;
   const [data, setData] = useState<CommandCenter | null>(null);
+  const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [role, setRole] = useState("MEMBER");
-  const [inviteLink, setInviteLink] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   async function load() {
@@ -38,15 +38,29 @@ export default function CompanyTeamPage() {
   async function onInvite(e: FormEvent) {
     e.preventDefault();
     setError(null);
-    if (!requireFields([{ label: "Email", value: email, ok: isEmail(email) }])) return;
+    if (
+      !requireFields([
+        { label: "Full name", value: fullName },
+        { label: "Email", value: email, ok: isEmail(email) },
+      ])
+    ) {
+      return;
+    }
     try {
-      const res = await apiFetch<{ acceptPath: string }>(`/companies/${companyId}/invitations`, {
-        method: "POST",
-        body: JSON.stringify({ email, role }),
-      });
-      setInviteLink(`${window.location.origin}${res.acceptPath}`);
+      const res = await apiFetch<{ mailSent: boolean; message: string }>(
+        `/companies/${companyId}/invitations`,
+        {
+          method: "POST",
+          body: JSON.stringify({ fullName: fullName.trim(), email, role }),
+        },
+      );
+      setFullName("");
       setEmail("");
-      toast.success("Invite sent", "Share the invite link with your teammate.");
+      if (res.mailSent) {
+        toast.success("Invite sent", "Login credentials emailed to the teammate.");
+      } else {
+        toast.error("Member added", res.message || "Email failed — check Admin → Mail.");
+      }
       await load();
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Invite failed";
@@ -58,24 +72,28 @@ export default function CompanyTeamPage() {
   return (
     <AppShell title="Team members" subtitle="Company workspace" nav={companyNav(companyId)}>
       {error ? <p className="mb-4 text-sm text-brand-error">{error}</p> : null}
-      {inviteLink ? (
-        <p className="mb-4 rounded-xl border border-brand-secondary/30 bg-brand-secondary/10 p-3 text-sm">
-          Invite link (dev): {inviteLink}
-        </p>
-      ) : null}
 
-      <form noValidate onSubmit={onInvite} className="panel mb-6 grid gap-3 p-5 md:grid-cols-3">
+      <form noValidate onSubmit={onInvite} className="panel mb-6 grid gap-3 p-5 md:grid-cols-4">
+        <input
+          className="field mt-0"
+          placeholder="Full name"
+          value={fullName}
+          onChange={(e) => setFullName(e.target.value)}
+          title="Teammate full name"
+        />
         <input
           className="field mt-0"
           placeholder="Email"
           type="email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
+          title="Teammate email"
         />
         <select
           className="rounded-xl border border-white/10 bg-ink-elevated px-3 py-2 text-sm"
           value={role}
           onChange={(e) => setRole(e.target.value)}
+          title="Team role"
         >
           <option value="ADMIN">Admin</option>
           <option value="MANAGER">Manager</option>
@@ -83,7 +101,7 @@ export default function CompanyTeamPage() {
           <option value="APPROVER">Approver</option>
         </select>
         <button className="rounded-xl bg-brand-primary px-4 py-2 text-sm font-semibold text-white">
-          Invite teammate
+          Invite member
         </button>
       </form>
 

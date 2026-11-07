@@ -1,11 +1,18 @@
 import {
+  BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
+import * as bcrypt from "bcryptjs";
 import { randomBytes } from "crypto";
 import { EntitlementsService } from "../billing/entitlements.service";
+import { allocateUserCode } from "../common/user-code.util";
 import { hashToken } from "../common/crypto.util";
+import { generateTempPassword } from "../common/password.util";
+import { MailService } from "../mail/mail.service";
 import { PrismaService } from "../prisma/prisma.service";
 import type { AuthUser } from "../auth/jwt.strategy";
 import { InviteClientUserDto, InviteCompanyMemberDto } from "./dto/invite.dto";
@@ -15,6 +22,8 @@ export class CompaniesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly entitlements: EntitlementsService,
+    private readonly mail: MailService,
+    private readonly config: ConfigService,
   ) {}
 
   async getWorkspace(companyId: string) {
@@ -320,12 +329,140 @@ export class CompaniesService {
 
   async inviteMember(companyId: string, actor: AuthUser, dto: InviteCompanyMemberDto) {
     await this.assertManager(companyId, actor);
-    return this.createInvite({
-      email: dto.email.toLowerCase(),
-      companyId,
-      companyRole: dto.role,
-      invitedById: actor.id,
+    const fullName = dto.fullName?.trim();
+    if (!fullName || fullName.length < 2) {
+      throw new BadRequestException("Full name is required");
+    }
+
+    const entitlements = await this.entitlements.getEntitlements(companyId);
+    if (entitlements.quotas.team.remaining <= 0) {
+      throw new ForbiddenException(
+        `Team seat quota reached (${entitlements.quotas.team.limit}). Upgrade your plan to add more members.`,
+      );
+    }
+
+    const company = await this.prisma.company.findUnique({ where: { id: companyId } });
+    if (!company) throw new NotFoundException("Company not found");
+
+    const email = dto.email.toLowerCase().trim();
+    const existing = await this.prisma.user.findUnique({ where: { email } });
+    if (existing) {
+      const already = await this.prisma.companyMember.findUnique({
+        where: { companyId_userId: { companyId, userId: existing.id } },
+      });
+      if (already && already.status !== "SUSPENDED") {
+        throw new ConflictException("This person is already on the team");
+      }
+    }
+
+    const plainPassword = generateTempPassword();
+    const passwordHash = await bcrypt.hash(plainPassword, 10);
+    const webOrigin =
+      this.config.get<string>("WEB_ORIGIN") ??
+      this.config.get<string>("PUBLIC_WEB_URL") ??
+      "https://srsocialhub.in";
+    const loginUrl = `${webOrigin.replace(/\/$/, "")}/login`;
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      let user = existing;
+      if (!user) {
+        user = await tx.user.create({
+          data: {
+            userCode: await allocateUserCode(tx),
+            email,
+            fullName,
+            globalRole: "USER",
+            isActive: true,
+            emailVerifiedAt: new Date(),
+            passwordHash,
+          },
+        });
+      } else {
+        user = await tx.user.update({
+          where: { id: user.id },
+          data: {
+            fullName: user.fullName || fullName,
+            isActive: true,
+            emailVerifiedAt: user.emailVerifiedAt ?? new Date(),
+            passwordHash,
+          },
+        });
+      }
+
+      await tx.companyMember.upsert({
+        where: { companyId_userId: { companyId, userId: user.id } },
+        create: {
+          companyId,
+          userId: user.id,
+          role: dto.role,
+          status: "ACTIVE",
+          invitedAt: new Date(),
+          acceptedAt: new Date(),
+        },
+        update: {
+          role: dto.role,
+          status: "ACTIVE",
+          acceptedAt: new Date(),
+        },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          actorId: actor.id,
+          companyId,
+          action: "TEAM_MEMBER_INVITED",
+          entityType: "CompanyMember",
+          entityId: user.id,
+          metadata: { email, fullName, role: dto.role, provisioned: true },
+        },
+      });
+
+      return { user };
     });
+
+    let mailSent = false;
+    let mailError: string | null = null;
+    try {
+      await this.mail.sendMail({
+        to: email,
+        subject: `Team access — ${company.name} | SR Social Hub`,
+        html: this.mail.teamAccessHtml({
+          fullName,
+          companyName: company.name,
+          email,
+          password: plainPassword,
+          role: dto.role,
+          loginUrl,
+        }),
+        text: [
+          `SR SOCIAL HUB — TEAM ACCESS`,
+          ``,
+          `Hi ${fullName},`,
+          ``,
+          `You were added to ${company.name} as ${dto.role}.`,
+          ``,
+          `Email: ${email}`,
+          `Password: ${plainPassword}`,
+          ``,
+          `Sign in: ${loginUrl}`,
+        ].join("\n"),
+      });
+      mailSent = true;
+    } catch (err) {
+      mailError = err instanceof Error ? err.message : "Failed to send invite email";
+    }
+
+    return {
+      id: result.user.id,
+      email,
+      fullName,
+      role: dto.role,
+      mailSent,
+      mailError,
+      message: mailSent
+        ? "Team member added. Login credentials were emailed."
+        : `Member added, but email failed (${mailError}). Check Admin → Mail & SMS.`,
+    };
   }
 
   async inviteClientUser(

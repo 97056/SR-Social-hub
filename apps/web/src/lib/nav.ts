@@ -36,6 +36,7 @@ export function adminNav(): NavItem[] {
     { href: "/admin/integrations", label: "Social Integrations", icon: "integrations", color: "#C026FF" },
     { href: "/admin/plans", label: "Subscription Plans", icon: "plans", color: "#F0C14A" },
     { href: "/admin/billing", label: "Billing Overview", icon: "billing", color: "#3DDC97" },
+    { href: "/admin/payments", label: "Payments", icon: "billing", color: "#F0C14A" },
     { href: "/admin/branding", label: "CMS and Branding", icon: "branding", color: "#FF6B6B" },
     { href: "/admin/faqs", label: "Support FAQs", icon: "faqs", color: "#00D2FF" },
     { href: "/admin/contact-leads", label: "Contact Leads", icon: "leads", color: "#FFB020" },

@@ -286,11 +286,16 @@ export default async function HomePage() {
             publish across the networks that actually move your brands.
           </p>
           <div className="mt-8 flex flex-wrap gap-3">
-            <Link href="/login" className="landing-cta px-6 py-3.5 text-sm font-semibold">
+            <Link
+              href="/login"
+              title="Enter SR Social Hub"
+              className="landing-cta px-6 py-3.5 text-sm font-semibold"
+            >
               Enter the hub
             </Link>
             <a
               href="#pricing"
+              title="Explore SR Social Hub plans"
               className="rounded-xl border border-white/15 bg-white/5 px-6 py-3.5 text-sm font-semibold text-white backdrop-blur transition hover:border-brand-primary/40 hover:bg-white/10"
             >
               Explore plans
@@ -300,6 +305,7 @@ export default async function HomePage() {
             {socialNetworks.map((s, i) => (
               <span
                 key={s.name}
+                title={`Publish to ${s.name} with SR Social Hub`}
                 className="landing-social-chip inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.14em]"
                 style={{
                   ["--chip-i" as string]: i,
@@ -349,6 +355,7 @@ export default async function HomePage() {
             <Image
               src={brand.logoUrl}
               alt={`${brand.platformName} neon brand mark`}
+              title={`${brand.platformName} neon brand mark`}
               width={640}
               height={640}
               className="h-full w-full scale-110 object-cover"

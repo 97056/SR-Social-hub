@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Param, Patch, Post, UseGuards } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
 import type { AuthUser } from "../auth/jwt.strategy";
 import { CurrentUser } from "../common/decorators/current-user.decorator";
@@ -12,7 +12,9 @@ import {
   CancelSubscriptionDto,
   ChangePlanDto,
   CheckoutDto,
+  ConfirmRazorpayDto,
   PurchaseAddonDto,
+  UpdatePaymentSettingsDto,
 } from "./dto/billing.dto";
 
 @ApiTags("billing")
@@ -57,6 +59,36 @@ export class BillingController {
     @Body() dto: CheckoutDto,
   ) {
     return this.billing.checkout(companyId, user, dto);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, CompanyAccessGuard)
+  @Post("companies/:companyId/billing/confirm-razorpay")
+  confirmRazorpay(
+    @Param("companyId") companyId: string,
+    @CurrentUser() user: AuthUser,
+    @Body() dto: ConfirmRazorpayDto,
+  ) {
+    return this.billing.confirmRazorpay(companyId, user, dto);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles("SUPER_ADMIN")
+  @Get("admin/payments")
+  paymentSettings() {
+    return this.billing.getPaymentSettingsPublic();
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles("SUPER_ADMIN")
+  @Patch("admin/payments")
+  updatePaymentSettings(
+    @CurrentUser() user: AuthUser,
+    @Body() dto: UpdatePaymentSettingsDto,
+  ) {
+    return this.billing.updatePaymentSettings(user, dto);
   }
 
   @ApiBearerAuth()

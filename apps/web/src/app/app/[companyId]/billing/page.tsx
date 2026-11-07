@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { AppShell, StatCard } from "@/components/shell";
+import { toast } from "@/components/toast";
 import { apiFetch, getToken } from "@/lib/api";
 import { companyNav } from "@/lib/nav";
 
@@ -24,9 +25,14 @@ type PublicPricing = {
 type BillingPayload = {
   note: string;
   billingMode: string;
+  selfServeEnabled?: boolean;
+  razorpayKeyId?: string | null;
   entitlements: {
     planCode: string | null;
     planName: string | null;
+    isTrialing?: boolean;
+    catalogPlanCode?: string | null;
+    catalogPlanName?: string | null;
     subscriptionStatus: string | null;
     interval: string | null;
     trialEndsAt: string | null;
@@ -66,6 +72,50 @@ type BillingPayload = {
   }>;
 };
 
+type RazorpayCheckout = {
+  mode: "razorpay";
+  invoiceId: string;
+  planCode: string;
+  interval: string;
+  amountInr: number;
+  razorpay: {
+    keyId: string;
+    orderId: string;
+    amount: number;
+    currency: string;
+    name: string;
+    description: string;
+    prefill?: { name?: string };
+  };
+};
+
+declare global {
+  interface Window {
+    Razorpay?: new (options: Record<string, unknown>) => { open: () => void };
+  }
+}
+
+function loadRazorpayScript(): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (window.Razorpay) {
+      resolve();
+      return;
+    }
+    const existing = document.querySelector('script[src="https://checkout.razorpay.com/v1/checkout.js"]');
+    if (existing) {
+      existing.addEventListener("load", () => resolve());
+      existing.addEventListener("error", () => reject(new Error("Razorpay script failed")));
+      return;
+    }
+    const script = document.createElement("script");
+    script.src = "https://checkout.razorpay.com/v1/checkout.js";
+    script.async = true;
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error("Razorpay script failed"));
+    document.body.appendChild(script);
+  });
+}
+
 export default function CompanyBillingPage() {
   const params = useParams<{ companyId: string }>();
   const router = useRouter();
@@ -74,51 +124,145 @@ export default function CompanyBillingPage() {
   const [plans, setPlans] = useState<Plan[]>([]);
   const [trial, setTrial] = useState<PublicPricing["trial"] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [busyPlan, setBusyPlan] = useState<string | null>(null);
+
+  async function reload() {
+    const [b, pricing] = await Promise.all([
+      apiFetch<BillingPayload>(`/companies/${companyId}/billing`),
+      apiFetch<PublicPricing>("/public/pricing"),
+    ]);
+    setBilling(b);
+    setPlans(pricing.plans ?? []);
+    setTrial(pricing.trial ?? null);
+  }
 
   useEffect(() => {
     if (!getToken()) {
       router.replace("/login");
       return;
     }
-    Promise.all([
-      apiFetch<BillingPayload>(`/companies/${companyId}/billing`),
-      apiFetch<PublicPricing>("/public/pricing"),
-    ])
-      .then(([b, pricing]) => {
-        setBilling(b);
-        setPlans(pricing.plans ?? []);
-        setTrial(pricing.trial ?? null);
-      })
-      .catch((e: Error) => setError(e.message));
+    reload().catch((e: Error) => setError(e.message));
   }, [companyId, router]);
 
   const e = billing?.entitlements;
+  const isTrialing = Boolean(e?.isTrialing || e?.subscriptionStatus === "TRIALING" || e?.planCode === "TRIAL");
+  const selfServe = Boolean(billing?.selfServeEnabled);
+
+  async function upgrade(plan: Plan) {
+    if (plan.isCustom || plan.monthlyPriceInr <= 0) {
+      toast.error("Enterprise plan", "Contact admin to negotiate a custom quota.");
+      return;
+    }
+    setBusyPlan(plan.code);
+    setError(null);
+    try {
+      const res = await apiFetch<RazorpayCheckout | BillingPayload>(
+        `/companies/${companyId}/billing/checkout`,
+        {
+          method: "POST",
+          body: JSON.stringify({ planCode: plan.code, interval: "MONTHLY" }),
+        },
+      );
+
+      if ("mode" in res && res.mode === "razorpay") {
+        await loadRazorpayScript();
+        if (!window.Razorpay) throw new Error("Razorpay checkout unavailable");
+        const rz = res.razorpay;
+        await new Promise<void>((resolve, reject) => {
+          const checkout = new window.Razorpay!({
+            key: rz.keyId,
+            amount: rz.amount,
+            currency: rz.currency,
+            name: rz.name,
+            description: rz.description,
+            order_id: rz.orderId,
+            prefill: rz.prefill ?? {},
+            theme: { color: "#00D2FF" },
+            handler: async (response: {
+              razorpay_order_id: string;
+              razorpay_payment_id: string;
+              razorpay_signature: string;
+            }) => {
+              try {
+                await apiFetch(`/companies/${companyId}/billing/confirm-razorpay`, {
+                  method: "POST",
+                  body: JSON.stringify({
+                    planCode: res.planCode,
+                    interval: res.interval,
+                    invoiceId: res.invoiceId,
+                    razorpayOrderId: response.razorpay_order_id,
+                    razorpayPaymentId: response.razorpay_payment_id,
+                    razorpaySignature: response.razorpay_signature,
+                  }),
+                });
+                toast.success("Upgraded", `${plan.name} is now active.`);
+                await reload();
+                resolve();
+              } catch (err) {
+                reject(err);
+              }
+            },
+            modal: {
+              ondismiss: () => reject(new Error("Payment cancelled")),
+            },
+          });
+          checkout.open();
+        });
+      } else {
+        setBilling(res as BillingPayload);
+        toast.success("Upgraded", `${plan.name} is now active.`);
+        await reload();
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Upgrade failed";
+      if (msg !== "Payment cancelled") {
+        setError(msg);
+        toast.error("Upgrade failed", msg);
+      }
+    } finally {
+      setBusyPlan(null);
+    }
+  }
 
   return (
-    <AppShell title="Billing" subtitle="Plan & usage (admin-managed)" nav={companyNav(companyId)}>
+    <AppShell title="Billing" subtitle="Plan & usage" nav={companyNav(companyId)}>
       {error ? <p className="mb-4 text-sm text-brand-error">{error}</p> : null}
 
       <div className="panel mb-6 border-brand-primary/20 bg-brand-primary/5 p-4 text-sm leading-6 text-content-muted sm:p-5">
-        Plan prices, client quotas, and custom negotiations are managed by{" "}
-        <span className="text-content">SR Social Hub admin</span> only. Contact your administrator to
-        upgrade, downgrade, or negotiate a custom client quota.
+        {selfServe
+          ? "Upgrade anytime from this page. Payments are processed securely via Razorpay. Admin can switch test/live keys."
+          : billing?.note ??
+            "Self-serve checkout is off. Ask SR Social Hub admin to enable Payments and assign keys."}
       </div>
 
       <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard label="Your plan" value={e?.planName ?? "—"} />
         <StatCard
           label="Status"
-          value={e?.subscriptionStatus ?? (e?.publishingAllowed ? "OK" : "Restricted")}
+          value={
+            isTrialing
+              ? "TRIALING"
+              : (e?.subscriptionStatus ?? (e?.publishingAllowed ? "OK" : "Restricted"))
+          }
         />
         <StatCard
           label="Client profiles"
           value={`${e?.quotas.clients.used ?? 0}/${e?.quotas.clients.limit ?? 0}`}
         />
         <StatCard
-          label="Storage (MB)"
-          value={`${e?.quotas.storageMb.used ?? 0}/${e?.quotas.storageMb.limit ?? 0}`}
+          label="Social accounts"
+          value={`${e?.quotas.accounts.used ?? 0}/${e?.quotas.accounts.limit ?? 0}`}
         />
       </div>
+
+      {isTrialing && e?.trialEndsAt ? (
+        <p className="mb-6 rounded-xl border border-brand-secondary/40 bg-brand-secondary/10 px-4 py-3 text-sm">
+          Free trial active
+          {e.catalogPlanName ? ` (catalog baseline: ${e.catalogPlanName})` : ""}. Ends{" "}
+          {new Date(e.trialEndsAt).toLocaleString()}. Upgrade below to unlock higher client limits
+          (3 / 6 / 9+).
+        </p>
+      ) : null}
 
       {e && !e.publishingAllowed ? (
         <p className="mb-6 rounded-xl border border-brand-error/40 bg-brand-error/10 px-4 py-3 text-sm">
@@ -127,10 +271,12 @@ export default function CompanyBillingPage() {
       ) : null}
 
       <section className="mb-8">
-        <h2 className="mb-3 font-display text-xl font-semibold">Catalog (live from admin)</h2>
+        <h2 className="mb-3 font-display text-xl font-semibold">Plans</h2>
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           {trial ? (
-            <div className="panel p-5">
+            <div
+              className={`panel p-5 ${isTrialing ? "ring-1 ring-brand-primary/50" : ""}`}
+            >
               <p className="text-[11px] uppercase tracking-[0.18em] text-content-muted">FREE TRIAL</p>
               <h3 className="mt-2 font-display text-lg font-semibold">Free trial</h3>
               <p className="mt-3 font-display text-2xl font-semibold">₹0</p>
@@ -139,14 +285,17 @@ export default function CompanyBillingPage() {
                 {trial.clientQuota === 1 ? "" : "s"} · {trial.accountQuota} social
                 {trial.accountQuota === 1 ? "" : "s"}
               </p>
+              {isTrialing ? (
+                <p className="mt-4 text-xs font-semibold text-brand-secondary">Current plan</p>
+              ) : null}
             </div>
           ) : null}
           {plans.map((plan) => {
-            const current = e?.planCode === plan.code;
+            const currentPaid = !isTrialing && e?.planCode === plan.code;
             return (
               <div
                 key={plan.code}
-                className={`panel p-5 ${current ? "ring-1 ring-brand-primary/50" : ""}`}
+                className={`panel flex flex-col p-5 ${currentPaid ? "ring-1 ring-brand-primary/50" : ""}`}
               >
                 <p className="text-[11px] uppercase tracking-[0.18em] text-content-muted">{plan.code}</p>
                 <h3 className="mt-2 font-display text-lg font-semibold">{plan.name}</h3>
@@ -163,9 +312,26 @@ export default function CompanyBillingPage() {
                     ? "Custom client seats"
                     : `${plan.clientQuota} client profiles · ${plan.accountQuota ?? "—"} socials`}
                 </p>
-                {current ? (
-                  <p className="mt-4 text-xs font-semibold text-brand-secondary">Current plan</p>
-                ) : null}
+                <div className="mt-auto pt-4">
+                  {currentPaid ? (
+                    <p className="text-xs font-semibold text-brand-secondary">Current plan</p>
+                  ) : selfServe && !plan.isCustom && plan.monthlyPriceInr > 0 ? (
+                    <button
+                      type="button"
+                      disabled={busyPlan === plan.code}
+                      onClick={() => upgrade(plan)}
+                      className="rounded-xl bg-brand-primary px-4 py-2 text-sm font-semibold text-ink-bg disabled:opacity-60"
+                    >
+                      {busyPlan === plan.code
+                        ? "Opening…"
+                        : isTrialing
+                          ? "Upgrade & pay"
+                          : "Switch plan"}
+                    </button>
+                  ) : plan.isCustom ? (
+                    <p className="text-xs text-content-muted">Contact admin</p>
+                  ) : null}
+                </div>
               </div>
             );
           })}

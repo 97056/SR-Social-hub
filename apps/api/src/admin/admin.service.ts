@@ -103,6 +103,13 @@ const DEFAULT_BRANDING = {
     "Agency workspaces, client approvals, and multi-network publishing from one neon-bright hub.",
   supportEmail: "support@srsocialhub.in",
   themeDefault: "dark",
+  seoTitle: "SR Social Hub — Agency Social Media Command Center",
+  seoDescription:
+    "All-in-one social media management for agencies — create, approve, and publish across Facebook, Instagram, LinkedIn, X, YouTube, Pinterest, and Threads.",
+  seoAuthor: "SR Social Hub",
+  seoPublisher: "SR Social Hub",
+  seoKeywordPool:
+    "social media management, agency social hub, multi network publishing, Facebook scheduling, Instagram content approval, LinkedIn agency tools, Threads publisher, YouTube social workflow, Pinterest scheduler, X Twitter management, client approval workflow, social command center, SR Social Hub, agency client portals, content calendar India, social media SaaS, brand publishing platform, team collaboration social, draft approve publish",
 };
 
 const DEFAULT_SYSTEM = {

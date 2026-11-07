@@ -3,6 +3,10 @@ import { IsEmail, IsEnum, IsOptional, IsString } from "class-validator";
 
 export class InviteCompanyMemberDto {
   @ApiProperty()
+  @IsString()
+  fullName!: string;
+
+  @ApiProperty()
   @IsEmail()
   email!: string;
 

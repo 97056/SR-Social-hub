@@ -297,6 +297,33 @@ export class UpdateBrandingDto {
   @IsOptional()
   @IsString()
   themeDefault?: "dark" | "light";
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  seoTitle?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  seoDescription?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  seoAuthor?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  seoPublisher?: string;
+
+  @ApiPropertyOptional({
+    description: "Comma-separated keyword pool; the site rotates a daily subset",
+  })
+  @IsOptional()
+  @IsString()
+  seoKeywordPool?: string;
 }
 
 export class UpdateSystemSettingsDto {

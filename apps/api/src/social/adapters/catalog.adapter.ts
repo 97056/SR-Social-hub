@@ -160,7 +160,11 @@ export class CatalogSocialAdapter implements SocialAdapter {
     const requiresRealProfile =
       this.entry.code === "THREADS" ||
       this.entry.code === "INSTAGRAM" ||
-      this.entry.code === "FACEBOOK";
+      this.entry.code === "FACEBOOK" ||
+      this.entry.code === "LINKEDIN" ||
+      this.entry.code === "X" ||
+      this.entry.code === "YOUTUBE" ||
+      this.entry.code === "PINTEREST";
     if (requiresRealProfile && !profile.externalAccountId) {
       throw new Error(
         `${this.displayName} connected but profile lookup failed. Check app permissions / Live mode, then reconnect.`,
@@ -291,6 +295,81 @@ export class CatalogSocialAdapter implements SocialAdapter {
           };
         }
         return {};
+      }
+
+      if (this.entry.code === "LINKEDIN") {
+        const meRes = await fetch("https://api.linkedin.com/v2/userinfo", {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        });
+        if (!meRes.ok) return {};
+        const me = (await meRes.json()) as {
+          sub?: string;
+          name?: string;
+          given_name?: string;
+          family_name?: string;
+          email?: string;
+          picture?: string;
+        };
+        if (!me.sub) return {};
+        const display =
+          me.name ||
+          [me.given_name, me.family_name].filter(Boolean).join(" ") ||
+          me.email ||
+          "LinkedIn Member";
+        return {
+          externalAccountId: me.sub,
+          accountName: display,
+          username: me.email || me.sub,
+          pageIdentifier: me.sub,
+          rawMeta: { linkedInSub: me.sub, picture: me.picture ?? null },
+        };
+      }
+
+      if (this.entry.code === "X") {
+        const meUrl = new URL("https://api.twitter.com/2/users/me");
+        meUrl.searchParams.set("user.fields", "username,name,profile_image_url");
+        const meRes = await fetch(meUrl, {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        });
+        if (!meRes.ok) return {};
+        const meJson = (await meRes.json()) as {
+          data?: { id?: string; username?: string; name?: string; profile_image_url?: string };
+        };
+        const me = meJson.data;
+        if (!me?.id) return {};
+        return {
+          externalAccountId: me.id,
+          accountName: me.name || (me.username ? `@${me.username}` : "X Account"),
+          username: me.username || me.id,
+          pageIdentifier: me.id,
+          rawMeta: { xUserId: me.id, profileImage: me.profile_image_url ?? null },
+        };
+      }
+
+      if (this.entry.code === "YOUTUBE") {
+        const chUrl = new URL("https://www.googleapis.com/youtube/v3/channels");
+        chUrl.searchParams.set("part", "snippet");
+        chUrl.searchParams.set("mine", "true");
+        const chRes = await fetch(chUrl, {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        });
+        if (!chRes.ok) return {};
+        const chJson = (await chRes.json()) as {
+          items?: Array<{
+            id?: string;
+            snippet?: { title?: string; customUrl?: string };
+          }>;
+        };
+        const channel = chJson.items?.[0];
+        if (!channel?.id) return {};
+        const custom = channel.snippet?.customUrl?.replace(/^@/, "") || null;
+        return {
+          externalAccountId: channel.id,
+          accountName: channel.snippet?.title || "YouTube Channel",
+          username: custom || channel.snippet?.title || channel.id,
+          pageIdentifier: channel.id,
+          rawMeta: { youtubeChannelId: channel.id, customUrl: custom },
+        };
       }
     } catch {
       return {};

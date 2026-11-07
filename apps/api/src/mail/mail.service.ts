@@ -322,6 +322,49 @@ export class MailService {
   </table>
 </body></html>`;
   }
+
+  /** Team member invite with auto-generated login password. */
+  teamAccessHtml(opts: {
+    fullName: string;
+    companyName: string;
+    email: string;
+    password: string;
+    role: string;
+    loginUrl: string;
+  }) {
+    const year = new Date().getFullYear();
+    return `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Team invite — ${escapeHtml(opts.companyName)}</title></head>
+<body style="margin:0;padding:0;background:#061018;color:#e8f4f8;font-family:'Segoe UI',Helvetica,Arial,sans-serif">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#061018;padding:36px 12px">
+    <tr><td align="center">
+      <table role="presentation" width="100%" style="max-width:560px;border-radius:18px;overflow:hidden;border:1px solid rgba(0,210,255,.28);background:#0a1820">
+        <tr><td style="padding:28px 24px;background:linear-gradient(115deg,#0d3a48,#0a1820)">
+          <p style="margin:0 0 8px;font-size:11px;letter-spacing:.24em;text-transform:uppercase;color:#7ad9ef;font-weight:700">Team invite</p>
+          <h1 style="margin:0;font-size:24px;color:#fff">You're on ${escapeHtml(opts.companyName)}</h1>
+          <p style="margin:12px 0 0;font-size:14px;line-height:1.6;color:#9bb8c2">Hi ${escapeHtml(opts.fullName)}, you have been added as <strong style="color:#F0C14A">${escapeHtml(opts.role)}</strong>. Use the credentials below to sign in.</p>
+        </td></tr>
+        <tr><td style="padding:22px 24px">
+          <p style="margin:0 0 4px;font-size:11px;color:#8a9a7a;letter-spacing:.12em;text-transform:uppercase">Email</p>
+          <p style="margin:0 0 14px;font-size:15px;font-weight:700;color:#f5f7ff;word-break:break-all">${escapeHtml(opts.email)}</p>
+          <p style="margin:0 0 4px;font-size:11px;color:#8a9a7a;letter-spacing:.12em;text-transform:uppercase">Password</p>
+          <p style="margin:0;padding:12px 14px;border-radius:10px;background:#050a08;border:1px solid rgba(240,193,74,.4);font-family:Consolas,'Courier New',monospace;font-size:18px;letter-spacing:.12em;font-weight:700;color:#F0C14A;word-break:break-all">${escapeHtml(opts.password)}</p>
+          <table role="presentation" cellspacing="0" cellpadding="0" style="margin:24px 0 8px"><tr>
+            <td style="border-radius:14px;background:linear-gradient(105deg,#00d2ff 0%,#C026FF 100%)">
+              <a href="${escapeAttr(opts.loginUrl)}" style="display:inline-block;padding:15px 28px;border-radius:14px;color:#041018;font-size:14px;font-weight:800;text-decoration:none">Open team login →</a>
+            </td>
+          </tr></table>
+          <p style="margin:0;font-size:11px;line-height:1.55;color:#5f7882">Change this password anytime via Forgot password after first login.</p>
+        </td></tr>
+        <tr><td style="padding:14px 24px 18px;border-top:1px solid rgba(0,210,255,.12)">
+          <p style="margin:0;font-size:11px;color:#5f7882">© ${year} SR Social Hub · Team workspace credentials</p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body></html>`;
+  }
 }
 
 function escapeHtml(value: string) {

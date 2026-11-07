@@ -60,3 +60,62 @@ export class BillingWebhookDto {
   @IsObject()
   payload!: Record<string, unknown>;
 }
+
+export class ConfirmRazorpayDto {
+  @ApiProperty()
+  @IsString()
+  planCode!: string;
+
+  @ApiPropertyOptional({ enum: ["MONTHLY", "YEARLY"] })
+  @IsOptional()
+  @IsEnum(["MONTHLY", "YEARLY"])
+  interval?: "MONTHLY" | "YEARLY";
+
+  @ApiProperty()
+  @IsString()
+  invoiceId!: string;
+
+  @ApiProperty()
+  @IsString()
+  razorpayOrderId!: string;
+
+  @ApiProperty()
+  @IsString()
+  razorpayPaymentId!: string;
+
+  @ApiProperty()
+  @IsString()
+  razorpaySignature!: string;
+}
+
+export class UpdatePaymentSettingsDto {
+  @ApiPropertyOptional({ enum: ["test", "live"] })
+  @IsOptional()
+  @IsEnum(["test", "live"])
+  mode?: "test" | "live";
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  selfServeEnabled?: boolean;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  testKeyId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  testKeySecret?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  liveKeyId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  liveKeySecret?: string;
+}

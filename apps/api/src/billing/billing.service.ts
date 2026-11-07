@@ -6,14 +6,38 @@ import {
 import { BillingInterval, Prisma } from "@prisma/client";
 import { createHash, randomBytes } from "crypto";
 import type { AuthUser } from "../auth/jwt.strategy";
+import { decryptSecret, encryptSecret, maskSecret } from "../common/crypto.util";
 import { PrismaService } from "../prisma/prisma.service";
 import { EntitlementsService } from "./entitlements.service";
 import type {
   CancelSubscriptionDto,
   ChangePlanDto,
   CheckoutDto,
+  ConfirmRazorpayDto,
   PurchaseAddonDto,
+  UpdatePaymentSettingsDto,
 } from "./dto/billing.dto";
+import { createRazorpayOrder, verifyRazorpaySignature } from "./razorpay.util";
+
+type PaymentSettings = {
+  provider: "razorpay";
+  mode: "test" | "live";
+  selfServeEnabled: boolean;
+  testKeyId: string;
+  testKeySecretEncrypted: string | null;
+  liveKeyId: string;
+  liveKeySecretEncrypted: string | null;
+};
+
+const DEFAULT_PAYMENTS: PaymentSettings = {
+  provider: "razorpay",
+  mode: "test",
+  selfServeEnabled: false,
+  testKeyId: "",
+  testKeySecretEncrypted: null,
+  liveKeyId: "",
+  liveKeySecretEncrypted: null,
+};
 
 @Injectable()
 export class BillingService {
@@ -74,26 +98,87 @@ export class BillingService {
       take: 24,
     });
 
+    const paymentsCfg = await this.getPaymentSettingsRaw();
+    const selfServe = await this.isSelfServeEnabled(paymentsCfg);
+    const razorpay = this.resolveRazorpayCredentials(paymentsCfg);
+
     return {
       entitlements,
       subscription,
       invoices,
       payments,
-      billingMode: process.env.BILLING_MODE === "live" ? "live" : "mock",
-      note:
-        process.env.BILLING_SELF_SERVE === "true"
-          ? process.env.BILLING_MODE === "live"
-            ? "Live payment provider configured."
-            : "Mock billing: payments are simulated locally and never charge a real card."
-          : "Plans and quotas are managed by SR Social Hub admin only (self-serve checkout disabled).",
+      billingMode: razorpay ? paymentsCfg.mode : process.env.BILLING_MODE === "live" ? "live" : "mock",
+      selfServeEnabled: selfServe,
+      razorpayKeyId: razorpay?.keyId ?? null,
+      note: selfServe
+        ? razorpay
+          ? `Self-serve upgrades enabled via Razorpay (${paymentsCfg.mode}).`
+          : "Self-serve enabled (mock settlement — configure Razorpay keys in Admin → Payments)."
+        : "Plans and quotas are managed by SR Social Hub admin only (self-serve checkout disabled).",
     };
+  }
+
+  async getPaymentSettingsPublic() {
+    const raw = await this.getPaymentSettingsRaw();
+    return {
+      provider: raw.provider,
+      mode: raw.mode,
+      selfServeEnabled: raw.selfServeEnabled,
+      testKeyId: raw.testKeyId || "",
+      liveKeyId: raw.liveKeyId || "",
+      testKeySecret: maskSecret(raw.testKeySecretEncrypted),
+      liveKeySecret: maskSecret(raw.liveKeySecretEncrypted),
+      hasTestSecret: Boolean(raw.testKeySecretEncrypted),
+      hasLiveSecret: Boolean(raw.liveKeySecretEncrypted),
+    };
+  }
+
+  async updatePaymentSettings(actor: AuthUser, dto: UpdatePaymentSettingsDto) {
+    const current = await this.getPaymentSettingsRaw();
+    const next: PaymentSettings = {
+      ...current,
+      mode: dto.mode ?? current.mode,
+      selfServeEnabled:
+        typeof dto.selfServeEnabled === "boolean" ? dto.selfServeEnabled : current.selfServeEnabled,
+      testKeyId: dto.testKeyId?.trim() || current.testKeyId,
+      liveKeyId: dto.liveKeyId?.trim() || current.liveKeyId,
+      testKeySecretEncrypted: current.testKeySecretEncrypted,
+      liveKeySecretEncrypted: current.liveKeySecretEncrypted,
+    };
+    if (dto.testKeySecret && dto.testKeySecret !== "••••••••") {
+      next.testKeySecretEncrypted = encryptSecret(dto.testKeySecret.trim());
+    }
+    if (dto.liveKeySecret && dto.liveKeySecret !== "••••••••") {
+      next.liveKeySecretEncrypted = encryptSecret(dto.liveKeySecret.trim());
+    }
+    await this.prisma.systemSetting.upsert({
+      where: { key: "payments" },
+      create: { key: "payments", value: next },
+      update: { value: next },
+    });
+    await this.prisma.auditLog.create({
+      data: {
+        actorId: actor.id,
+        action: "ADMIN_PAYMENTS_UPDATED",
+        entityType: "SystemSetting",
+        entityId: "payments",
+        metadata: {
+          mode: next.mode,
+          selfServeEnabled: next.selfServeEnabled,
+          testKeyId: next.testKeyId ? `${next.testKeyId.slice(0, 8)}…` : null,
+          liveKeyId: next.liveKeyId ? `${next.liveKeyId.slice(0, 8)}…` : null,
+        },
+      },
+    });
+    return this.getPaymentSettingsPublic();
   }
 
   async checkout(companyId: string, user: AuthUser, dto: CheckoutDto) {
     await this.assertCompanyOwnerOrAdmin(companyId, user);
-    if (process.env.BILLING_SELF_SERVE !== "true") {
+    const paymentsCfg = await this.getPaymentSettingsRaw();
+    if (!(await this.isSelfServeEnabled(paymentsCfg))) {
       throw new BadRequestException(
-        "Plan changes are admin-managed only. Ask SR Social Hub admin to assign a plan or negotiate custom quota.",
+        "Plan changes are admin-managed only. Ask SR Social Hub admin to assign a plan or enable self-serve payments.",
       );
     }
 
@@ -111,45 +196,22 @@ export class BillingService {
         ? plan.yearlyPriceInr ?? plan.monthlyPriceInr * 10
         : plan.monthlyPriceInr;
 
+    const company = await this.prisma.company.findUnique({ where: { id: companyId } });
+    if (!company) throw new NotFoundException("Company not found");
+
     const now = new Date();
     const periodEnd = new Date(now);
     if (interval === "YEARLY") periodEnd.setFullYear(periodEnd.getFullYear() + 1);
     else periodEnd.setMonth(periodEnd.getMonth() + 1);
 
     const invoiceNumber = `INV-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}-${randomBytes(3).toString("hex").toUpperCase()}`;
+    const razorpayCreds = this.resolveRazorpayCredentials(paymentsCfg);
 
-    const result = await this.prisma.$transaction(async (tx) => {
-      // End prior open subscriptions
-      await tx.subscription.updateMany({
-        where: {
-          companyId,
-          status: { in: ["TRIALING", "ACTIVE", "PAST_DUE", "GRACE"] },
-        },
-        data: {
-          status: "CANCELLED",
-          cancelledAt: now,
-          cancelAtPeriodEnd: false,
-        },
-      });
-
-      const subscription = await tx.subscription.create({
+    // Razorpay path: create OPEN invoice first, charge, then activate on confirm.
+    if (razorpayCreds) {
+      const invoice = await this.prisma.invoice.create({
         data: {
           companyId,
-          planId: plan.id,
-          status: "ACTIVE",
-          interval,
-          currentPeriodStart: now,
-          currentPeriodEnd: periodEnd,
-          trialEndsAt: null,
-          provider: "mock",
-          providerSubId: `mock_sub_${randomBytes(6).toString("hex")}`,
-        },
-      });
-
-      const invoice = await tx.invoice.create({
-        data: {
-          companyId,
-          subscriptionId: subscription.id,
           number: invoiceNumber,
           status: "OPEN",
           subtotalInr: amount,
@@ -163,57 +225,176 @@ export class BillingService {
               description: `${plan.name} (${interval.toLowerCase()})`,
               amountInr: amount,
               quantity: 1,
+              planCode: plan.code,
+              interval,
             },
           ] as Prisma.InputJsonValue,
         },
       });
 
-      await tx.company.update({
-        where: { id: companyId },
-        data: {
-          planId: plan.id,
-          status: "ACTIVE",
-          trialEndsAt: null,
-        },
-      });
+      try {
+        const order = await createRazorpayOrder({
+          keyId: razorpayCreds.keyId,
+          keySecret: razorpayCreds.keySecret,
+          amountInr: amount,
+          receipt: invoice.number,
+          notes: {
+            companyId,
+            planCode: plan.code,
+            interval,
+            invoiceId: invoice.id,
+          },
+        });
 
-      await tx.auditLog.create({
-        data: {
-          actorId: user.id,
-          companyId,
-          action: "BILLING_CHECKOUT_STARTED",
-          entityType: "Subscription",
-          entityId: subscription.id,
-          metadata: { planCode: plan.code, interval, amountInr: amount, mode: "mock" },
-        },
-      });
+        await this.prisma.auditLog.create({
+          data: {
+            actorId: user.id,
+            companyId,
+            action: "BILLING_CHECKOUT_STARTED",
+            entityType: "Invoice",
+            entityId: invoice.id,
+            metadata: {
+              planCode: plan.code,
+              interval,
+              amountInr: amount,
+              mode: paymentsCfg.mode,
+              razorpayOrderId: order.id,
+            },
+          },
+        });
 
-      return { subscription, invoice, amount };
+        return {
+          mode: "razorpay" as const,
+          invoiceId: invoice.id,
+          planCode: plan.code,
+          interval,
+          amountInr: amount,
+          currency: "INR",
+          razorpay: {
+            keyId: razorpayCreds.keyId,
+            orderId: order.id,
+            amount: order.amount,
+            currency: order.currency,
+            name: "SR Social Hub",
+            description: `${plan.name} · ${interval.toLowerCase()}`,
+            prefill: { name: company.name },
+          },
+        };
+      } catch (err) {
+        await this.prisma.invoice.update({
+          where: { id: invoice.id },
+          data: { status: "VOID" },
+        });
+        throw new BadRequestException(
+          err instanceof Error ? err.message : "Failed to start Razorpay checkout",
+        );
+      }
+    }
+
+    // Mock path (dev / no keys): activate immediately.
+    const result = await this.activatePaidPlan({
+      companyId,
+      userId: user.id,
+      planId: plan.id,
+      planCode: plan.code,
+      planName: plan.name,
+      interval,
+      amount,
+      invoiceNumber,
+      now,
+      periodEnd,
+      provider: "mock",
+      providerSubId: `mock_sub_${randomBytes(6).toString("hex")}`,
     });
 
-    // Mock provider: immediately settle via internal webhook path
-    if (process.env.BILLING_MODE !== "live") {
-      await this.processWebhook({
-        provider: "mock",
-        eventType: "payment.succeeded",
-        idempotencyKey: `mock_pay_${result.invoice.id}`,
-        payload: {
-          invoiceId: result.invoice.id,
-          companyId,
-          amountInr: result.amount,
-          providerPaymentId: `mock_pay_${randomBytes(6).toString("hex")}`,
-        },
-      });
+    await this.processWebhook({
+      provider: "mock",
+      eventType: "payment.succeeded",
+      idempotencyKey: `mock_pay_${result.invoiceId}`,
+      payload: {
+        invoiceId: result.invoiceId,
+        companyId,
+        amountInr: amount,
+        providerPaymentId: `mock_pay_${randomBytes(6).toString("hex")}`,
+      },
+    });
+
+    return {
+      mode: "mock" as const,
+      ...(await this.getCompanyBilling(companyId, user)),
+    };
+  }
+
+  async confirmRazorpay(companyId: string, user: AuthUser, dto: ConfirmRazorpayDto) {
+    await this.assertCompanyOwnerOrAdmin(companyId, user);
+    const paymentsCfg = await this.getPaymentSettingsRaw();
+    const creds = this.resolveRazorpayCredentials(paymentsCfg);
+    if (!creds) throw new BadRequestException("Razorpay is not configured");
+
+    const ok = verifyRazorpaySignature({
+      orderId: dto.razorpayOrderId,
+      paymentId: dto.razorpayPaymentId,
+      signature: dto.razorpaySignature,
+      keySecret: creds.keySecret,
+    });
+    if (!ok) throw new BadRequestException("Invalid Razorpay payment signature");
+
+    const invoice = await this.prisma.invoice.findFirst({
+      where: { id: dto.invoiceId, companyId },
+    });
+    if (!invoice) throw new NotFoundException("Invoice not found");
+    if (invoice.status === "PAID") {
+      return this.getCompanyBilling(companyId, user);
     }
+
+    const plan = await this.prisma.subscriptionPlan.findUnique({
+      where: { code: dto.planCode },
+    });
+    if (!plan || !plan.isActive) throw new NotFoundException("Plan not found");
+
+    const interval: BillingInterval = dto.interval === "YEARLY" ? "YEARLY" : "MONTHLY";
+    const now = new Date();
+    const periodEnd = new Date(now);
+    if (interval === "YEARLY") periodEnd.setFullYear(periodEnd.getFullYear() + 1);
+    else periodEnd.setMonth(periodEnd.getMonth() + 1);
+
+    await this.activatePaidPlan({
+      companyId,
+      userId: user.id,
+      planId: plan.id,
+      planCode: plan.code,
+      planName: plan.name,
+      interval,
+      amount: invoice.totalInr,
+      invoiceNumber: invoice.number,
+      now,
+      periodEnd,
+      provider: "razorpay",
+      providerSubId: dto.razorpayOrderId,
+      existingInvoiceId: invoice.id,
+    });
+
+    await this.processWebhook({
+      provider: "razorpay",
+      eventType: "payment.succeeded",
+      idempotencyKey: `rzp_${dto.razorpayPaymentId}`,
+      payload: {
+        invoiceId: invoice.id,
+        companyId,
+        amountInr: invoice.totalInr,
+        providerPaymentId: dto.razorpayPaymentId,
+        razorpayOrderId: dto.razorpayOrderId,
+      },
+    });
 
     return this.getCompanyBilling(companyId, user);
   }
 
   async changePlan(companyId: string, user: AuthUser, dto: ChangePlanDto) {
     await this.assertCompanyOwnerOrAdmin(companyId, user);
-    if (process.env.BILLING_SELF_SERVE !== "true") {
+    if (!(await this.isSelfServeEnabled())) {
       throw new BadRequestException(
-        "Plan changes are admin-managed only. Ask SR Social Hub admin to assign a plan or negotiate custom quota.",
+        "Plan changes are admin-managed only. Ask SR Social Hub admin to assign a plan or enable self-serve payments.",
       );
     }
     const plan = await this.prisma.subscriptionPlan.findUnique({ where: { code: dto.planCode } });
@@ -306,7 +487,7 @@ export class BillingService {
 
   async purchaseAddon(companyId: string, user: AuthUser, dto: PurchaseAddonDto) {
     await this.assertCompanyOwnerOrAdmin(companyId, user);
-    if (process.env.BILLING_SELF_SERVE !== "true") {
+    if (!(await this.isSelfServeEnabled())) {
       throw new BadRequestException(
         "Add-ons are admin-managed only. Ask SR Social Hub admin to adjust client quota.",
       );
@@ -553,6 +734,130 @@ export class BillingService {
         trialEndsAt,
         provider: "mock",
       },
+    });
+  }
+
+  private async getPaymentSettingsRaw(): Promise<PaymentSettings> {
+    const row = await this.prisma.systemSetting.findUnique({ where: { key: "payments" } });
+    return { ...DEFAULT_PAYMENTS, ...((row?.value as Partial<PaymentSettings>) ?? {}) };
+  }
+
+  private async isSelfServeEnabled(cfg?: PaymentSettings): Promise<boolean> {
+    if (process.env.BILLING_SELF_SERVE === "true") return true;
+    const settings = cfg ?? (await this.getPaymentSettingsRaw());
+    return Boolean(settings.selfServeEnabled);
+  }
+
+  private resolveRazorpayCredentials(cfg: PaymentSettings): { keyId: string; keySecret: string } | null {
+    const keyId = cfg.mode === "live" ? cfg.liveKeyId : cfg.testKeyId;
+    const enc = cfg.mode === "live" ? cfg.liveKeySecretEncrypted : cfg.testKeySecretEncrypted;
+    if (!keyId || !enc) return null;
+    try {
+      return { keyId, keySecret: decryptSecret(enc) };
+    } catch {
+      return null;
+    }
+  }
+
+  private async activatePaidPlan(input: {
+    companyId: string;
+    userId: string;
+    planId: string;
+    planCode: string;
+    planName: string;
+    interval: BillingInterval;
+    amount: number;
+    invoiceNumber: string;
+    now: Date;
+    periodEnd: Date;
+    provider: string;
+    providerSubId: string;
+    existingInvoiceId?: string;
+  }) {
+    return this.prisma.$transaction(async (tx) => {
+      await tx.subscription.updateMany({
+        where: {
+          companyId: input.companyId,
+          status: { in: ["TRIALING", "ACTIVE", "PAST_DUE", "GRACE"] },
+        },
+        data: {
+          status: "CANCELLED",
+          cancelledAt: input.now,
+          cancelAtPeriodEnd: false,
+        },
+      });
+
+      const subscription = await tx.subscription.create({
+        data: {
+          companyId: input.companyId,
+          planId: input.planId,
+          status: "ACTIVE",
+          interval: input.interval,
+          currentPeriodStart: input.now,
+          currentPeriodEnd: input.periodEnd,
+          trialEndsAt: null,
+          provider: input.provider,
+          providerSubId: input.providerSubId,
+        },
+      });
+
+      let invoiceId = input.existingInvoiceId;
+      if (invoiceId) {
+        await tx.invoice.update({
+          where: { id: invoiceId },
+          data: { subscriptionId: subscription.id },
+        });
+      } else {
+        const invoice = await tx.invoice.create({
+          data: {
+            companyId: input.companyId,
+            subscriptionId: subscription.id,
+            number: input.invoiceNumber,
+            status: "OPEN",
+            subtotalInr: input.amount,
+            taxInr: 0,
+            totalInr: input.amount,
+            periodStart: input.now,
+            periodEnd: input.periodEnd,
+            dueAt: input.now,
+            lineItems: [
+              {
+                description: `${input.planName} (${input.interval.toLowerCase()})`,
+                amountInr: input.amount,
+                quantity: 1,
+              },
+            ] as Prisma.InputJsonValue,
+          },
+        });
+        invoiceId = invoice.id;
+      }
+
+      await tx.company.update({
+        where: { id: input.companyId },
+        data: {
+          planId: input.planId,
+          status: "ACTIVE",
+          trialEndsAt: null,
+        },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          actorId: input.userId,
+          companyId: input.companyId,
+          action: "BILLING_CHECKOUT_STARTED",
+          entityType: "Subscription",
+          entityId: subscription.id,
+          metadata: {
+            planCode: input.planCode,
+            interval: input.interval,
+            amountInr: input.amount,
+            provider: input.provider,
+          },
+        },
+      });
+
+      return { subscriptionId: subscription.id, invoiceId: invoiceId! };
     });
   }
 

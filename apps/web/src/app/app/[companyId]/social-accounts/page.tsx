@@ -261,10 +261,15 @@ export default function CompanySocialAccountsPage() {
                       {account.accountName ?? platform.name}
                     </p>
                     <p className="mt-1 text-sm font-semibold text-brand-primary">
-                      @
-                      {account.username && !/_live_[a-f0-9]+$/i.test(account.username)
-                        ? account.username
-                        : "unknown — reconnect"}
+                      {(() => {
+                        const u =
+                          account.username && !/_live_[a-f0-9]+$/i.test(account.username)
+                            ? account.username
+                            : null;
+                        if (!u) return "unknown — reconnect";
+                        if (u.includes("@") && u.includes(".")) return u;
+                        return u.startsWith("@") ? u : `@${u}`;
+                      })()}
                     </p>
                     <p className="mt-1 text-[11px] text-[var(--muted)]">
                       Account ID:{" "}

@@ -164,10 +164,16 @@ export function SiteHeader({
   return (
     <header className="mx-auto max-w-6xl px-6 pt-5">
       <div className="landing-header flex items-center justify-between gap-4 rounded-full border border-white/10 bg-white/[0.04] px-3 py-2 shadow-[0_0_40px_rgba(0,210,255,0.08)] backdrop-blur-xl sm:px-5">
-        <Link href="/" className="landing-logo-pulse relative inline-flex shrink-0" aria-label={platformName}>
+        <Link
+          href="/"
+          className="landing-logo-pulse relative inline-flex shrink-0"
+          aria-label={platformName}
+          title={`${platformName} home`}
+        >
           <Image
             src={logoUrl}
             alt={platformName}
+            title={platformName}
             width={88}
             height={88}
             className="h-16 w-16 rounded-full object-cover ring-2 ring-brand-primary/45 sm:h-[4.5rem] sm:w-[4.5rem]"
@@ -179,6 +185,7 @@ export function SiteHeader({
             <Link
               key={href}
               href={href}
+              title={`${label} — ${platformName}`}
               className="inline-flex items-center gap-1.5 rounded-full px-3.5 py-2 transition hover:bg-white/5 hover:text-white"
             >
               <span
@@ -194,11 +201,16 @@ export function SiteHeader({
         <div className="flex items-center gap-2 sm:gap-3">
           <Link
             href="/register"
+            title={`Register on ${platformName}`}
             className="hidden rounded-full border border-white/15 px-3.5 py-2 text-sm text-content-muted transition hover:border-white/30 hover:text-white sm:inline-flex"
           >
             Register
           </Link>
-          <Link href="/login" className="landing-cta px-4 py-2.5 text-sm font-semibold sm:px-5">
+          <Link
+            href="/login"
+            title={`Sign in to ${platformName}`}
+            className="landing-cta px-4 py-2.5 text-sm font-semibold sm:px-5"
+          >
             Enter hub
           </Link>
         </div>
@@ -263,6 +275,7 @@ export function SiteFooter({
               <Image
                 src={logoUrl}
                 alt={platformName}
+                title={platformName}
                 width={56}
                 height={56}
                 className="h-14 w-14 rounded-full object-cover ring-1 ring-brand-primary/50"
@@ -279,7 +292,11 @@ export function SiteFooter({
               between draft and publish.
             </p>
           </div>
-          <Link href="/login" className="landing-cta w-fit px-6 py-3.5 text-sm font-semibold">
+          <Link
+            href="/login"
+            title={`Sign in to ${platformName}`}
+            className="landing-cta w-fit px-6 py-3.5 text-sm font-semibold"
+          >
             Enter the hub
           </Link>
         </div>
@@ -296,7 +313,11 @@ export function SiteFooter({
               <ul className="mt-4 space-y-3 text-sm text-content-muted">
                 {col.links.map((l) => (
                   <li key={l.href}>
-                    <Link href={l.href} className="landing-footer-link inline-flex items-center gap-2.5">
+                    <Link
+                      href={l.href}
+                      title={`${l.label} — ${platformName}`}
+                      className="landing-footer-link inline-flex items-center gap-2.5"
+                    >
                       <span
                         className="inline-flex h-6 w-6 items-center justify-center rounded-md border border-white/10"
                         style={{ color: col.color, background: `${col.color}18` }}
