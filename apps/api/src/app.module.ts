@@ -19,6 +19,7 @@ import { PublishingModule } from "./publishing/publishing.module";
 import { PublicModule } from "./public/public.module";
 import { SocialModule } from "./social/social.module";
 import { GrowthModule } from "./growth/growth.module";
+import { SeoWorkspaceModule } from "./seo-workspace/seo-workspace.module";
 
 @Module({
   imports: [
@@ -41,6 +42,7 @@ import { GrowthModule } from "./growth/growth.module";
     AiModule,
     AnalyticsModule,
     GrowthModule,
+    SeoWorkspaceModule,
     AdminModule,
   ],
 })

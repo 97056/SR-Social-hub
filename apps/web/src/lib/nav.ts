@@ -21,7 +21,8 @@ export type NavIcon =
   | "leads"
   | "mail"
   | "admin"
-  | "growth";
+  | "growth"
+  | "seo";
 
 export type NavItem = {
   href: string;
@@ -74,6 +75,7 @@ export function companyNav(companyId: string): NavItem[] {
     { href: `/app/${companyId}/command-center`, label: "Command Center", icon: "command", color: "#C026FF" },
     { href: `/app/${companyId}/clients`, label: "Clients", icon: "clients", color: "#7B5CFF" },
     { href: `/app/${companyId}/social-accounts`, label: "Social Accounts", icon: "social", color: "#3DDC97" },
+    { href: `/app/${companyId}/seo-workspace`, label: "SEO Workspace", icon: "seo", color: "#00D2FF" },
     { href: `/app/${companyId}/media`, label: "Media Library", icon: "media", color: "#FF6B6B" },
     { href: `/app/${companyId}/create`, label: "Create Post", icon: "create", color: "#F0C14A" },
     { href: `/app/${companyId}/posts`, label: "Posts", icon: "posts", color: "#00D2FF" },

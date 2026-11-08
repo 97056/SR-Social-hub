@@ -105,6 +105,14 @@ export function NavGlyph({ name, className = "h-4 w-4" }: { name: NavIcon; class
           <path d="M9 12h6" />
         </svg>
       );
+    case "seo":
+      return (
+        <svg {...props}>
+          <circle cx="11" cy="11" r="7" />
+          <path d="m20 20-3.5-3.5" />
+          <path d="M8 11h6M11 8v6" />
+        </svg>
+      );
     case "notifications":
       return (
         <svg {...props}>
