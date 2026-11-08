@@ -24,6 +24,8 @@ import { formatCompetitorsField, suggestCompetitorsFromSignals } from "./growth-
 import { toDbSafeJson, toDbSafeText } from "./growth-db-safe.util";
 import { fetchPublicWebsite, normalizeWebsiteUrl } from "./growth-website.util";
 
+// normalizeWebsiteUrl is also used by SEO https checks
+
 const DEFAULT_AI_SETTINGS = {
   enabled: true,
   provider: "sr-growth-mock",
@@ -234,27 +236,38 @@ export class GrowthService {
     const url = dto.websiteUrl || profile.websiteUrl;
     await this.consumeAi(companyId, user, "growth_seo_analysis");
     let snapshot = null as Awaited<ReturnType<typeof fetchPublicWebsite>> | null;
+    let fetchError: string | null = null;
     if (url) {
       try {
         snapshot = await fetchPublicWebsite(url);
-      } catch {
+      } catch (e) {
+        fetchError = e instanceof Error ? e.message : "Website fetch failed";
         snapshot = null;
       }
+    } else {
+      fetchError = "No website URL on the business profile";
     }
     const keywords = this.keywordHints(profile);
+    const measured = Boolean(snapshot);
     const result = {
-      summary: "SEO & visibility scan (on-page measured where website fetched; rankings estimated only as suggestions)",
+      summary: measured
+        ? `SEO & visibility scan for ${snapshot!.finalUrl}`
+        : `SEO scan incomplete — could not measure on-page tags (${fetchError}). Suggestions below are estimated only.`,
       onPage: {
-        title: snapshot?.title ?? null,
-        metaDescription: snapshot?.description ?? null,
-        headings: snapshot?.headings ?? [],
-        hasViewport: snapshot?.hasViewport ?? null,
-        measured: Boolean(snapshot),
+        title: measured ? snapshot!.title : null,
+        metaDescription: measured ? snapshot!.description : null,
+        headings: measured ? snapshot!.headings : [],
+        hasViewport: measured ? snapshot!.hasViewport : null,
+        measured,
+        unavailableReason: measured ? null : fetchError,
       },
       technical: {
-        https: url?.startsWith("https") ?? null,
+        https: url ? normalizeWebsiteUrl(url).startsWith("https") : null,
         fetchStatus: snapshot?.status ?? null,
-        notes: snapshot?.brokenNote ? [snapshot.brokenNote] : [],
+        notes: [
+          ...(snapshot?.brokenNote ? [snapshot.brokenNote] : []),
+          ...(fetchError ? [fetchError] : []),
+        ],
       },
       keywordTopics: {
         type: "AI_SUGGESTION",
@@ -269,25 +282,33 @@ export class GrowthService {
         ],
       },
       contentOpportunities: keywords.slice(0, 5).map((k) => `Create a pillar page targeting "${k}"`),
-      limitations: "Search rankings and traffic are not measured without Search Console / analytics integrations.",
+      limitations: measured
+        ? "Search rankings and traffic are not measured without Search Console / analytics integrations."
+        : "On-page title/meta/viewport were not measured because the website could not be fetched. Do not treat Missing as confirmed faults.",
     };
     return this.saveRun(companyId, dto.clientId, user, "SEO", "SEO & visibility", dto, result, snapshot
       ? { sourceUrl: snapshot.finalUrl, fetchedAt: snapshot.fetchedAt, status: snapshot.status }
-      : undefined);
+      : { fetchError });
   }
 
   async suggestCompetitors(companyId: string, user: AuthUser, dto: RunGrowthAnalysisDto & { save?: boolean }) {
     const profile = await this.requireProfile(companyId, dto.clientId);
     const url = dto.websiteUrl || profile.websiteUrl;
-    if (!url) throw new BadRequestException("Website URL is required to auto-fill competitors");
+    if (!url && !(profile.industry || profile.category || profile.description)) {
+      throw new BadRequestException("Add a website URL or industry/description so competitors can be mapped");
+    }
 
     await this.consumeAi(companyId, user, "growth_suggest_competitors");
 
     let snapshot: Awaited<ReturnType<typeof fetchPublicWebsite>> | null = null;
-    try {
-      snapshot = await fetchPublicWebsite(url);
-    } catch (e) {
-      throw new BadRequestException(e instanceof Error ? e.message : "Website fetch failed");
+    let fetchNote: string | null = null;
+    if (url) {
+      try {
+        snapshot = await fetchPublicWebsite(url);
+      } catch (e) {
+        // Still map competitors from profile/industry when crawl fails.
+        fetchNote = e instanceof Error ? e.message : "Website fetch failed";
+      }
     }
 
     const suggested = suggestCompetitorsFromSignals({
@@ -297,10 +318,10 @@ export class GrowthService {
       productsServices: profile.productsServices,
       targetAudience: profile.targetAudience,
       businessName: profile.businessName,
-      websiteTitle: snapshot.title,
-      websiteDescription: snapshot.description,
-      websiteExcerpt: snapshot.rawExcerpt,
-      htmlLower: snapshot.htmlLower,
+      websiteTitle: snapshot?.title,
+      websiteDescription: snapshot?.description,
+      websiteExcerpt: snapshot?.rawExcerpt,
+      htmlLower: snapshot?.htmlLower,
     });
 
     if (!suggested.items.length) {
@@ -309,13 +330,21 @@ export class GrowthService {
 
     const competitorsText = toDbSafeText(formatCompetitorsField(suggested.items));
     const shouldSave = dto.save !== false;
+    let websiteUrlOut = profile.websiteUrl;
+    if (url) {
+      try {
+        websiteUrlOut = snapshot?.finalUrl || normalizeWebsiteUrl(url);
+      } catch {
+        websiteUrlOut = url;
+      }
+    }
     let profileOut = profile;
     if (shouldSave) {
       profileOut = await this.prisma.growthBusinessProfile.update({
         where: { clientId: dto.clientId },
         data: {
           competitors: competitorsText,
-          websiteUrl: snapshot.finalUrl || url,
+          ...(websiteUrlOut ? { websiteUrl: websiteUrlOut } : {}),
         },
       });
     }
@@ -323,16 +352,20 @@ export class GrowthService {
     await this.audit(user, companyId, "GROWTH_COMPETITORS_SUGGESTED", "GrowthBusinessProfile", profileOut.id, {
       category: suggested.category,
       count: suggested.items.length,
-      sourceUrl: snapshot.finalUrl,
+      sourceUrl: snapshot?.finalUrl || websiteUrlOut,
+      fetchNote,
     });
 
     return {
       category: suggested.category,
-      sourceUrl: snapshot.finalUrl,
+      sourceUrl: snapshot?.finalUrl || websiteUrlOut,
       competitors: competitorsText,
       items: suggested.items,
       profile: profileOut,
-      message: `Filled ${suggested.items.length} competitors from website analysis (${suggested.category}).`,
+      fetchNote,
+      message: snapshot
+        ? `Filled ${suggested.items.length} competitors from website analysis (${suggested.category}).`
+        : `Filled ${suggested.items.length} competitors from industry/profile signals (${suggested.category}). Website crawl note: ${fetchNote}`,
     };
   }
 

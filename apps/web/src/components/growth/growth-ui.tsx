@@ -262,14 +262,34 @@ export function SeoAnalysisView({ data }: { data: unknown }) {
   const r = unwrapResult(data);
   const onPage = (r.onPage as Record<string, unknown>) || {};
   const keywords = (r.keywordTopics as { items?: string[] }) || {};
+  const measured = onPage.measured !== false && !onPage.unavailableReason;
+  const missingLabel = measured ? "Missing" : "Not measured (site fetch failed)";
   return (
     <div className="space-y-3">
       <Section title="Summary"><p>{String(r.summary || "—")}</p></Section>
+      {!measured && onPage.unavailableReason ? (
+        <p className="rounded-lg border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-sm text-amber-100">
+          {String(onPage.unavailableReason)}
+        </p>
+      ) : null}
       <div className="grid gap-3 sm:grid-cols-2">
-        <Section title="Title tag"><p>{String(onPage.title || "Missing")}</p></Section>
-        <Section title="Meta description"><p>{String(onPage.metaDescription || "Missing")}</p></Section>
+        <Section title="Title tag"><p>{String(onPage.title || missingLabel)}</p></Section>
+        <Section title="Meta description"><p>{String(onPage.metaDescription || missingLabel)}</p></Section>
+        <Section title="Mobile viewport">
+          <p>
+            {onPage.hasViewport == null
+              ? missingLabel
+              : onPage.hasViewport
+                ? "Detected"
+                : measured
+                  ? "Not detected"
+                  : missingLabel}
+          </p>
+        </Section>
       </div>
-      <Section title="Headings"><BulletList items={onPage.headings} empty="No headings extracted" /></Section>
+      <Section title="Headings">
+        <BulletList items={onPage.headings} empty={measured ? "No headings extracted" : missingLabel} />
+      </Section>
       <Section title="Keyword / topic suggestions"><BulletList items={keywords.items} /></Section>
       <Section title="Content opportunities"><BulletList items={r.contentOpportunities} /></Section>
       <p className="text-xs text-content-muted">{String(r.limitations || "")}</p>
