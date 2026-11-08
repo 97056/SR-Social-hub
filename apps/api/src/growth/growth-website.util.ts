@@ -11,10 +11,21 @@ const BLOCKED_HOSTS = new Set([
   "169.254.169.254",
 ]);
 
+/** Accepts full URLs or bare domains like path2carrer.in (https assumed). */
+export function normalizeWebsiteUrl(raw: string): string {
+  let value = raw.trim();
+  if (!value) throw new Error("Invalid website URL");
+  // Users often paste domains without a scheme.
+  if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(value)) {
+    value = `https://${value.replace(/^\/+/, "")}`;
+  }
+  return value;
+}
+
 export function assertPublicHttpUrl(raw: string): URL {
   let url: URL;
   try {
-    url = new URL(raw.trim());
+    url = new URL(normalizeWebsiteUrl(raw));
   } catch {
     throw new Error("Invalid website URL");
   }
@@ -22,6 +33,9 @@ export function assertPublicHttpUrl(raw: string): URL {
     throw new Error("Only http/https URLs are allowed");
   }
   const host = url.hostname.toLowerCase();
+  if (!host || !host.includes(".")) {
+    throw new Error("Invalid website URL");
+  }
   if (BLOCKED_HOSTS.has(host) || host.endsWith(".local") || host.endsWith(".internal")) {
     throw new Error("That host is not allowed for website analysis");
   }

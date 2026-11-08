@@ -22,7 +22,7 @@ import type {
 } from "./dto/growth.dto";
 import { formatCompetitorsField, suggestCompetitorsFromSignals } from "./growth-competitors.util";
 import { toDbSafeJson, toDbSafeText } from "./growth-db-safe.util";
-import { fetchPublicWebsite } from "./growth-website.util";
+import { fetchPublicWebsite, normalizeWebsiteUrl } from "./growth-website.util";
 
 const DEFAULT_AI_SETTINGS = {
   enabled: true,
@@ -118,9 +118,17 @@ export class GrowthService {
     dto: UpsertGrowthProfileDto,
   ) {
     await this.assertClient(companyId, clientId);
+    let websiteUrl = dto.websiteUrl;
+    if (websiteUrl?.trim()) {
+      try {
+        websiteUrl = normalizeWebsiteUrl(websiteUrl);
+      } catch {
+        throw new BadRequestException("Invalid website URL");
+      }
+    }
     const data = {
       businessName: dto.businessName,
-      websiteUrl: dto.websiteUrl,
+      websiteUrl,
       industry: dto.industry,
       category: dto.category,
       description: dto.description,
