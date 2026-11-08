@@ -19,6 +19,8 @@ type ClientSite = {
 type AnalysisPayload = {
   client: { id: string; name: string; website: string };
   website: string;
+  resolvedFrom?: string | null;
+  correctionNote?: string | null;
   analysis: {
     title: string | null;
     metaDescription: string | null;
@@ -47,6 +49,7 @@ type SitemapPayload = {
   urls: Array<{ url: string; status: number | null; title: string | null; source: string }>;
   complete: boolean;
   stoppedReason: string | null;
+  resolvedFrom?: string | null;
   stats: { fromSitemap: number; fromCrawl: number; fetched: number; failed: number; durationMs: number };
   limitations: string[];
   honesty: { unlimitedClaim: boolean; maxUrls: number; explanation: string };
@@ -58,6 +61,7 @@ type RobotsPayload = {
   robotsTxt: string;
   sitemapHint: string;
   note: string;
+  correctionNote?: string | null;
 };
 
 function downloadText(filename: string, content: string, type = "text/plain") {
@@ -95,6 +99,16 @@ export default function SeoWorkspacePage() {
       .catch((e: Error) => toast.error("Load failed", e.message));
   }, [companyId, router]);
 
+  function refreshClients(preferId?: string) {
+    return apiFetch<{ clients: ClientSite[] }>(`/companies/${companyId}/seo-workspace/clients`)
+      .then((p) => {
+        setClients(p.clients ?? []);
+        const next = preferId && p.clients?.some((c) => c.id === preferId) ? preferId : p.clients?.[0]?.id ?? "";
+        setClientId(next);
+      })
+      .catch(() => undefined);
+  }
+
   async function runAnalyze() {
     if (!clientId) return;
     setBusy("analyze");
@@ -104,7 +118,12 @@ export default function SeoWorkspacePage() {
         body: JSON.stringify({ clientId }),
       });
       setAnalysis(res);
-      toast.success("Deep SEO analysis ready");
+      if (res.resolvedFrom) {
+        toast.success("Deep SEO analysis ready", "Auto-fixed website spelling and saved it");
+        await refreshClients(clientId);
+      } else {
+        toast.success("Deep SEO analysis ready");
+      }
     } catch (err) {
       toast.error("Analysis failed", err instanceof Error ? err.message : "Error");
     } finally {
@@ -121,6 +140,7 @@ export default function SeoWorkspacePage() {
         body: JSON.stringify({ clientId }),
       });
       setSitemap(res);
+      if (res.resolvedFrom) await refreshClients(clientId);
       toast.success("Sitemap generated", `${res.urls.length} URL(s) discovered`);
     } catch (err) {
       toast.error("Sitemap failed", err instanceof Error ? err.message : "Error");
@@ -138,6 +158,7 @@ export default function SeoWorkspacePage() {
         body: JSON.stringify({ clientId }),
       });
       setRobots(res);
+      if (res.correctionNote) await refreshClients(clientId);
       toast.success("robots.txt generated");
     } catch (err) {
       toast.error("robots.txt failed", err instanceof Error ? err.message : "Error");
@@ -220,6 +241,17 @@ export default function SeoWorkspacePage() {
             {selected.website}
           </a>
         </p>
+      ) : null}
+
+      {analysis?.correctionNote || sitemap?.resolvedFrom || robots?.correctionNote ? (
+        <div className="mb-4 rounded-xl border border-sky-400/30 bg-sky-400/10 px-4 py-3 text-sm text-sky-50">
+          <p className="font-medium">Website URL auto-corrected</p>
+          <p className="mt-1 text-sky-100/90">
+            {analysis?.correctionNote ||
+              robots?.correctionNote ||
+              `Stored host was unreachable; used ${sitemap?.baseUrl} and saved the working URL on the client.`}
+          </p>
+        </div>
       ) : null}
 
       {analysis ? (

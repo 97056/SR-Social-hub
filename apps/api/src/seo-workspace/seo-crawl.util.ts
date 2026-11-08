@@ -1,3 +1,4 @@
+import * as dns from "node:dns";
 import {
   assertPublicHttpUrl,
   normalizeWebsiteUrl,
@@ -5,8 +6,15 @@ import {
   type WebsiteSnapshot,
 } from "../growth/growth-website.util";
 
+// Prefer IPv4 — many VPS Docker networks hang on broken IPv6 routes.
+try {
+  dns.setDefaultResultOrder("ipv4first");
+} catch {
+  /* older Node */
+}
+
 const UA =
-  "Mozilla/5.0 (compatible; SRSocialHub-SeoBot/1.0; +https://srsocialhub.in) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
 /** Practical hard ceiling — unlimited crawl of arbitrary sites is unsafe/impossible. */
 export const SEO_CRAWL_MAX_URLS = 5_000;
@@ -27,6 +35,7 @@ export type SitemapBuildResult = {
   xml: string;
   complete: boolean;
   stoppedReason: string | null;
+  resolvedFrom?: string | null;
   stats: {
     fromSitemap: number;
     fromCrawl: number;
@@ -37,24 +46,134 @@ export type SitemapBuildResult = {
   limitations: string[];
 };
 
-export async function fetchText(url: string, timeoutMs = 15_000): Promise<{ status: number; finalUrl: string; text: string }> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const res = await fetch(url, {
-      redirect: "follow",
-      signal: controller.signal,
-      headers: {
-        "User-Agent": UA,
-        Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.9",
-      },
-    });
-    const text = await res.text();
-    return { status: res.status, finalUrl: res.url || url, text };
-  } finally {
-    clearTimeout(timer);
+export type ResolvedWebsite = {
+  requestedUrl: string;
+  finalUrl: string;
+  origin: string;
+  hostname: string;
+  corrected: boolean;
+  correctionNote: string | null;
+};
+
+/** Common domain typos we can safely auto-retry when DNS fails. */
+function typoHostCandidates(hostname: string): string[] {
+  const h = hostname.toLowerCase().replace(/^www\./, "");
+  const out = new Set<string>([h, `www.${h}`]);
+  const swaps: Array<[RegExp, string]> = [
+    [/carrer/g, "career"],
+    [/careeer/g, "career"],
+    [/carreer/g, "career"],
+    [/gogle/g, "google"],
+    [/facebok/g, "facebook"],
+    [/instgram/g, "instagram"],
+  ];
+  for (const [re, repl] of swaps) {
+    if (re.test(h)) {
+      const fixed = h.replace(re, repl);
+      out.add(fixed);
+      out.add(`www.${fixed}`);
+    }
   }
+  return [...out];
+}
+
+function candidateUrls(raw: string): string[] {
+  const start = assertPublicHttpUrl(raw);
+  const hosts = typoHostCandidates(start.hostname);
+  const urls: string[] = [];
+  for (const host of hosts) {
+    urls.push(`https://${host}${start.pathname === "/" ? "/" : start.pathname}${start.search}`);
+    urls.push(`http://${host}${start.pathname === "/" ? "/" : start.pathname}${start.search}`);
+  }
+  // De-dupe while preserving order
+  return [...new Set(urls)];
+}
+
+export async function fetchText(
+  url: string,
+  timeoutMs = 15_000,
+): Promise<{ status: number; finalUrl: string; text: string }> {
+  let lastError: Error | null = null;
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const res = await fetch(url, {
+        redirect: "follow",
+        signal: controller.signal,
+        headers: {
+          "User-Agent": UA,
+          Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+          "Accept-Language": "en-US,en;q=0.9",
+          "Cache-Control": "no-cache",
+        },
+      });
+      const text = await res.text();
+      return { status: res.status, finalUrl: res.url || url, text };
+    } catch (e) {
+      const cause =
+        e instanceof Error && "cause" in e && e.cause instanceof Error
+          ? e.cause.message
+          : e instanceof Error
+            ? e.message
+            : "fetch failed";
+      lastError = new Error(cause);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  throw lastError || new Error("fetch failed");
+}
+
+/**
+ * Resolve a reachable public website from a stored client URL.
+ * Retries www/http and common typos (e.g. path2carrer.in → path2career.in).
+ */
+export async function resolveReachableWebsite(rawWebsiteUrl: string): Promise<ResolvedWebsite> {
+  const requested = assertPublicHttpUrl(rawWebsiteUrl).toString();
+  const tried: string[] = [];
+  let lastError = "Could not reach website";
+
+  for (const candidate of candidateUrls(rawWebsiteUrl)) {
+    if (tried.includes(candidate)) continue;
+    tried.push(candidate);
+    try {
+      const { status, finalUrl } = await fetchText(candidate, 12_000);
+      if (status >= 400 && status !== 401 && status !== 403) {
+        lastError = `HTTP ${status} from ${candidate}`;
+        continue;
+      }
+      const final = assertPublicHttpUrl(finalUrl);
+      const requestedHost = assertPublicHttpUrl(requested).hostname.replace(/^www\./, "").toLowerCase();
+      const finalHost = final.hostname.replace(/^www\./, "").toLowerCase();
+      const corrected = requestedHost !== finalHost;
+      return {
+        requestedUrl: requested,
+        finalUrl: final.toString(),
+        origin: final.origin,
+        hostname: final.hostname,
+        corrected,
+        correctionNote: corrected
+          ? `Stored URL host "${requestedHost}" was unreachable; using live host "${finalHost}". Fix the client website URL to avoid this next time.`
+          : null,
+      };
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "fetch failed";
+      if (/ENOTFOUND|getaddrinfo|NXDOMAIN/i.test(msg)) {
+        lastError = `Could not resolve host for ${new URL(candidate).hostname}`;
+      } else if (/abort|AbortError|timeout/i.test(msg)) {
+        lastError = `Timed out fetching ${new URL(candidate).hostname}`;
+      } else {
+        lastError = `Could not reach ${new URL(candidate).hostname}: ${msg}`;
+      }
+    }
+  }
+
+  throw new Error(
+    `${lastError}. Check the client website spelling (example: path2career.in not path2carrer.in). Tried: ${tried
+      .slice(0, 6)
+      .join(", ")}`,
+  );
 }
 
 export function sameHost(a: string, b: string): boolean {
@@ -65,19 +184,18 @@ export function sameHost(a: string, b: string): boolean {
   }
 }
 
-export function normalizeCrawlUrl(raw: string, base: string): string | null {
+export function normalizeCrawlUrl(raw: string, base: string, opts?: { allowXml?: boolean }): string | null {
   try {
     const u = new URL(raw, base);
     if (!["http:", "https:"].includes(u.protocol)) return null;
     u.hash = "";
-    // Drop common tracking params
     ["utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content", "fbclid", "gclid"].forEach((k) =>
       u.searchParams.delete(k),
     );
-    // Skip binary / non-page assets
-    if (/\.(pdf|jpg|jpeg|png|gif|webp|svg|ico|css|js|map|woff2?|ttf|zip|mp4|mp3|xml)$/i.test(u.pathname)) {
-      return null;
-    }
+    const assetRe = opts?.allowXml
+      ? /\.(pdf|jpg|jpeg|png|gif|webp|svg|ico|css|js|map|woff2?|ttf|zip|mp4|mp3)$/i
+      : /\.(pdf|jpg|jpeg|png|gif|webp|svg|ico|css|js|map|woff2?|ttf|zip|mp4|mp3|xml)$/i;
+    if (assetRe.test(u.pathname)) return null;
     let out = u.toString();
     if (out.endsWith("/") && u.pathname !== "/") out = out.slice(0, -1);
     return out;
@@ -112,26 +230,59 @@ export function parseSitemapXml(xml: string, base: string): { locs: string[]; ne
   let m: RegExpExecArray | null;
   const isIndex = /<sitemapindex[\s>]/i.test(xml);
   while ((m = locRe.exec(xml))) {
-    const raw = m[1].trim();
-    const n = normalizeCrawlUrl(raw, base);
-    if (!n) continue;
-    if (isIndex || /sitemap.*\.xml($|\?)/i.test(n)) nestedSitemaps.push(n);
-    else locs.push(n);
+    const raw = decodeXmlEntities(m[1].trim());
+    if (isIndex || /sitemap.*\.xml($|\?)/i.test(raw) || /\.xml($|\?)/i.test(raw)) {
+      const n = normalizeCrawlUrl(raw, base, { allowXml: true });
+      if (n) nestedSitemaps.push(n);
+    } else {
+      const n = normalizeCrawlUrl(raw, base);
+      if (n) locs.push(n);
+    }
   }
-  // Non-index sitemaps may still list only page URLs
   if (!isIndex) {
+    // Page sitemap may still list *.xml by mistake — keep page locs only
     return { locs, nestedSitemaps: nestedSitemaps.filter((u) => /sitemap/i.test(u)) };
   }
   return { locs: [], nestedSitemaps };
 }
 
+function decodeXmlEntities(s: string): string {
+  return s
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'");
+}
+
+async function collectSitemapSeedsFromRobots(origin: string): Promise<string[]> {
+  try {
+    const { status, text } = await fetchText(new URL("/robots.txt", origin).toString(), 8_000);
+    if (status >= 400) return [];
+    const found: string[] = [];
+    for (const line of text.split(/\r?\n/)) {
+      const m = line.match(/^\s*sitemap\s*:\s*(.+)$/i);
+      if (m?.[1]) {
+        const n = normalizeCrawlUrl(m[1].trim(), origin, { allowXml: true });
+        if (n) found.push(n);
+      }
+    }
+    return found;
+  } catch {
+    return [];
+  }
+}
+
 async function collectFromExistingSitemaps(start: URL, maxUrls: number): Promise<string[]> {
+  const fromRobots = await collectSitemapSeedsFromRobots(start.origin);
   const seeds = [
+    ...fromRobots,
     new URL("/sitemap.xml", start.origin).toString(),
     new URL("/sitemap_index.xml", start.origin).toString(),
     new URL("/sitemap-index.xml", start.origin).toString(),
+    new URL("/wp-sitemap.xml", start.origin).toString(),
   ];
-  const queue = [...seeds];
+  const queue = [...new Set(seeds)];
   const seenSitemaps = new Set<string>();
   const urls: string[] = [];
 
@@ -140,7 +291,7 @@ async function collectFromExistingSitemaps(start: URL, maxUrls: number): Promise
     if (seenSitemaps.has(sm)) continue;
     seenSitemaps.add(sm);
     try {
-      const { status, text } = await fetchText(sm, 12_000);
+      const { status, text } = await fetchText(sm, 15_000);
       if (status >= 400 || !/<urlset|<sitemapindex/i.test(text)) continue;
       const parsed = parseSitemapXml(text, start.origin);
       for (const n of parsed.nestedSitemaps) {
@@ -160,12 +311,14 @@ async function collectFromExistingSitemaps(start: URL, maxUrls: number): Promise
 
 export async function buildFullSitemap(rawWebsiteUrl: string): Promise<SitemapBuildResult> {
   const started = Date.now();
-  const start = assertPublicHttpUrl(rawWebsiteUrl);
+  const resolved = await resolveReachableWebsite(rawWebsiteUrl);
+  const start = assertPublicHttpUrl(resolved.origin);
   const limitations = [
     "No crawler can guarantee every possible URL forever: JavaScript-only routes, login walls, infinite filters/calendars, and blocked bots are not fully discoverable.",
-    `This run imports existing sitemaps (if any) and crawls same-host links up to ${SEO_CRAWL_MAX_URLS} URLs or ${SEO_CRAWL_MAX_MS / 1000}s.`,
+    `This run imports existing sitemaps (robots.txt + /sitemap.xml) and crawls same-host links up to ${SEO_CRAWL_MAX_URLS} URLs or ${SEO_CRAWL_MAX_MS / 1000}s.`,
     "Query-parameter explosion and non-HTML assets are filtered for a usable sitemap.",
   ];
+  if (resolved.correctionNote) limitations.unshift(resolved.correctionNote);
 
   const discovered = new Map<string, CrawledPage>();
   const add = (url: string, source: CrawledPage["source"], partial?: Partial<CrawledPage>) => {
@@ -181,7 +334,7 @@ export async function buildFullSitemap(rawWebsiteUrl: string): Promise<SitemapBu
     return true;
   };
 
-  const home = normalizeCrawlUrl(start.toString(), start.origin) || start.toString();
+  const home = normalizeCrawlUrl(resolved.finalUrl, start.origin) || start.toString();
   add(home, "seed");
 
   const fromSitemap = await collectFromExistingSitemaps(start, SEO_CRAWL_MAX_URLS);
@@ -191,6 +344,7 @@ export async function buildFullSitemap(rawWebsiteUrl: string): Promise<SitemapBu
   const fetched = new Set<string>();
   let failed = 0;
   let stoppedReason: string | null = null;
+  let homeFetchOk = fromSitemap.length > 0;
 
   while (queue.length) {
     if (Date.now() - started > SEO_CRAWL_MAX_MS) {
@@ -202,7 +356,7 @@ export async function buildFullSitemap(rawWebsiteUrl: string): Promise<SitemapBu
       break;
     }
 
-    const batch = queue.splice(0, 5).filter((u) => !fetched.has(u));
+    const batch = queue.splice(0, 8).filter((u) => !fetched.has(u));
     if (!batch.length) continue;
 
     await Promise.all(
@@ -213,12 +367,15 @@ export async function buildFullSitemap(rawWebsiteUrl: string): Promise<SitemapBu
           const { status, finalUrl, text } = await fetchText(pageUrl, 12_000);
           const normalizedFinal = normalizeCrawlUrl(finalUrl, start.origin) || pageUrl;
           if (!sameHost(normalizedFinal, start.origin)) return;
-          const title = (text.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] || "").replace(/<[^>]+>/g, " ").trim() || null;
+          const title =
+            (text.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] || "").replace(/<[^>]+>/g, " ").trim() || null;
           const canonical = extractCanonical(text, normalizedFinal);
           add(pageUrl, discovered.get(pageUrl)?.source || "crawl", { status, title, canonical });
           if (normalizedFinal !== pageUrl) add(normalizedFinal, "crawl", { status, title, canonical });
+          if (pageUrl === home || normalizedFinal === home) homeFetchOk = status < 400;
 
-          if (status >= 200 && status < 400 && /<html[\s>]|<body[\s>]|<a\s/i.test(text)) {
+          // Only extract links from HTML pages (not full sitemap XML bodies)
+          if (status >= 200 && status < 400 && /<html[\s>]|<body[\s>]|<a\s/i.test(text) && !/<urlset|<sitemapindex/i.test(text)) {
             for (const link of extractLinks(text, normalizedFinal)) {
               if (!sameHost(link, start.origin)) continue;
               if (!discovered.has(link)) {
@@ -235,17 +392,27 @@ export async function buildFullSitemap(rawWebsiteUrl: string): Promise<SitemapBu
         }
       }),
     );
+
+    // If sitemap already gave us plenty of URLs, skip exhaustive HTML crawl for speed
+    if (fromSitemap.length >= 50 && discovered.size >= fromSitemap.length) {
+      stoppedReason = null;
+      break;
+    }
   }
 
-  if (!stoppedReason && queue.length === 0) {
-    stoppedReason = null; // exhausted naturally
-  } else if (!stoppedReason && discovered.size >= SEO_CRAWL_MAX_URLS) {
+  if (!homeFetchOk && fromSitemap.length === 0 && discovered.size <= 1) {
+    throw new Error(
+      `Could not fetch pages from ${start.hostname}. Fix the client website URL or check DNS/SSL.`,
+    );
+  }
+
+  if (!stoppedReason && discovered.size >= SEO_CRAWL_MAX_URLS) {
     stoppedReason = `Reached URL ceiling (${SEO_CRAWL_MAX_URLS})`;
   }
 
   const urls = [...discovered.values()].sort((a, b) => a.url.localeCompare(b.url));
   const xml = buildSitemapXml(urls.map((u) => u.canonical || u.url));
-  const complete = !stoppedReason && failed === 0;
+  const complete = !stoppedReason && failed === 0 && urls.length > 1;
 
   return {
     baseUrl: start.origin,
@@ -253,7 +420,12 @@ export async function buildFullSitemap(rawWebsiteUrl: string): Promise<SitemapBu
     urls,
     xml,
     complete,
-    stoppedReason,
+    stoppedReason:
+      stoppedReason ||
+      (urls.length <= 1
+        ? "Only the homepage was found — site may block bots or use client-side routing only."
+        : null),
+    resolvedFrom: resolved.corrected ? resolved.requestedUrl : null,
     stats: {
       fromSitemap: urls.filter((u) => u.source === "sitemap").length,
       fromCrawl: urls.filter((u) => u.source === "crawl" || u.source === "seed").length,
@@ -297,18 +469,20 @@ export function buildRobotsTxt(origin: string, opts?: { extraDisallows?: string[
 export async function deepAnalyzeWebsite(rawWebsiteUrl: string): Promise<{
   snapshot: WebsiteSnapshot;
   seo: Record<string, unknown>;
+  resolvedFrom?: string | null;
+  correctionNote?: string | null;
 }> {
-  const start = assertPublicHttpUrl(rawWebsiteUrl);
-  const { status, finalUrl, text } = await fetchText(start.toString(), 18_000);
-  const snapshot = parseWebsiteHtml(start.toString(), finalUrl, status, text);
+  const resolved = await resolveReachableWebsite(rawWebsiteUrl);
+  const { status, finalUrl, text } = await fetchText(resolved.finalUrl, 18_000);
+  const snapshot = parseWebsiteHtml(resolved.finalUrl, finalUrl, status, text);
   const canonical = extractCanonical(text, finalUrl);
   const robotsMeta = text.match(/<meta[^>]+name=["']robots["'][^>]+content=["']([^"']*)["']/i)?.[1] || null;
   const jsonLd = [...text.matchAll(/<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)].length;
   const ogTags = [...text.matchAll(/property=["']og:[^"']+["']/gi)].length;
   const twitterTags = [...text.matchAll(/name=["']twitter:[^"']+["']/gi)].length;
-  const h1s = [...text.matchAll(/<h1\b[^>]*>([\s\S]*?)<\/h1>/gi)].map((m) =>
-    m[1].replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim(),
-  ).filter(Boolean);
+  const h1s = [...text.matchAll(/<h1\b[^>]*>([\s\S]*?)<\/h1>/gi)]
+    .map((m) => m[1].replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim())
+    .filter(Boolean);
   const images = [...text.matchAll(/<img\b[^>]*>/gi)];
   const imagesMissingAlt = images.filter((m) => !/\balt\s*=\s*["'][^"']+["']/i.test(m[0])).length;
   const links = extractLinks(text, finalUrl);
@@ -317,6 +491,13 @@ export async function deepAnalyzeWebsite(rawWebsiteUrl: string): Promise<{
   const wordCount = snapshot.rawExcerpt.split(/\s+/).filter(Boolean).length;
 
   const issues: Array<{ priority: string; issue: string; fix: string }> = [];
+  if (resolved.correctionNote) {
+    issues.push({
+      priority: "Critical",
+      issue: "Stored website URL host does not resolve",
+      fix: resolved.correctionNote,
+    });
+  }
   if (!snapshot.title) issues.push({ priority: "High", issue: "Missing title tag", fix: "Add a unique <title> with brand + primary offer." });
   if (snapshot.title && snapshot.title.length < 15) issues.push({ priority: "Medium", issue: "Title too short", fix: "Aim for ~30–60 characters." });
   if (snapshot.title && snapshot.title.length > 65) issues.push({ priority: "Low", issue: "Title may truncate in SERPs", fix: "Keep title under ~60 characters." });
@@ -331,6 +512,8 @@ export async function deepAnalyzeWebsite(rawWebsiteUrl: string): Promise<{
 
   return {
     snapshot,
+    resolvedFrom: resolved.corrected ? resolved.requestedUrl : null,
+    correctionNote: resolved.correctionNote,
     seo: {
       finalUrl,
       status,

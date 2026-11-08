@@ -6,6 +6,7 @@ import {
   buildRobotsTxt,
   deepAnalyzeWebsite,
   normalizeWebsiteUrl,
+  resolveReachableWebsite,
   SEO_CRAWL_MAX_URLS,
 } from "./seo-crawl.util";
 
@@ -47,7 +48,7 @@ export class SeoWorkspaceService {
   private async requireClientWebsite(companyId: string, clientId: string) {
     const client = await this.prisma.client.findFirst({
       where: { id: clientId, companyId, isArchived: false },
-      include: { growthProfile: { select: { websiteUrl: true } } },
+      include: { growthProfile: { select: { id: true, websiteUrl: true } } },
     });
     if (!client) throw new NotFoundException("Client not found in this company");
     const website = (client.website || client.growthProfile?.websiteUrl || "").trim();
@@ -61,24 +62,55 @@ export class SeoWorkspaceService {
       throw new BadRequestException("Client website URL is invalid");
     }
     return {
-      client: {
-        id: client.id,
-        name: client.businessName || client.name,
-        website: normalized,
-        industry: client.industry,
-      },
+      client,
       website: normalized,
     };
+  }
+
+  /** When DNS typo is auto-fixed (path2carrer → path2career), persist the working URL. */
+  private async persistCorrectedWebsite(
+    client: { id: string; website: string | null; growthProfile: { id: string; websiteUrl: string | null } | null },
+    correctedUrl: string,
+  ) {
+    const updates: Promise<unknown>[] = [];
+    if (client.website) {
+      updates.push(this.prisma.client.update({ where: { id: client.id }, data: { website: correctedUrl } }));
+    }
+    if (client.growthProfile?.websiteUrl) {
+      updates.push(
+        this.prisma.growthBusinessProfile.update({
+          where: { id: client.growthProfile.id },
+          data: { websiteUrl: correctedUrl },
+        }),
+      );
+    }
+    if (!client.website && !client.growthProfile?.websiteUrl) {
+      updates.push(this.prisma.client.update({ where: { id: client.id }, data: { website: correctedUrl } }));
+    }
+    await Promise.all(updates);
   }
 
   async analyze(companyId: string, user: AuthUser, clientId: string) {
     const { client, website } = await this.requireClientWebsite(companyId, clientId);
     try {
-      const { snapshot, seo } = await deepAnalyzeWebsite(website);
-      await this.audit(user, companyId, "SEO_WORKSPACE_ANALYZE", client.id, { website: snapshot.finalUrl });
-      return {
-        client,
+      const { snapshot, seo, resolvedFrom, correctionNote } = await deepAnalyzeWebsite(website);
+      if (resolvedFrom) {
+        await this.persistCorrectedWebsite(client, snapshot.finalUrl);
+      }
+      await this.audit(user, companyId, "SEO_WORKSPACE_ANALYZE", client.id, {
         website: snapshot.finalUrl,
+        resolvedFrom: resolvedFrom || null,
+      });
+      return {
+        client: {
+          id: client.id,
+          name: client.businessName || client.name,
+          website: snapshot.finalUrl,
+          industry: client.industry,
+        },
+        website: snapshot.finalUrl,
+        resolvedFrom: resolvedFrom || null,
+        correctionNote: correctionNote || null,
         analysis: seo,
         snapshot: {
           title: snapshot.title,
@@ -99,13 +131,21 @@ export class SeoWorkspaceService {
     const { client, website } = await this.requireClientWebsite(companyId, clientId);
     try {
       const result = await buildFullSitemap(website);
+      if (result.resolvedFrom) {
+        await this.persistCorrectedWebsite(client, result.baseUrl);
+      }
       await this.audit(user, companyId, "SEO_WORKSPACE_SITEMAP", client.id, {
         website: result.baseUrl,
         urls: result.urls.length,
         complete: result.complete,
+        resolvedFrom: result.resolvedFrom || null,
       });
       return {
-        client,
+        client: {
+          id: client.id,
+          name: client.businessName || client.name,
+          website: result.baseUrl,
+        },
         ...result,
         honesty: {
           unlimitedClaim: false,
@@ -121,21 +161,28 @@ export class SeoWorkspaceService {
 
   async generateRobots(companyId: string, user: AuthUser, clientId: string) {
     const { client, website } = await this.requireClientWebsite(companyId, clientId);
-    let origin: string;
     try {
-      origin = new URL(normalizeWebsiteUrl(website)).origin;
-    } catch {
-      throw new BadRequestException("Invalid website URL");
+      const resolved = await resolveReachableWebsite(website);
+      if (resolved.corrected) {
+        await this.persistCorrectedWebsite(client, resolved.origin);
+      }
+      const robotsTxt = buildRobotsTxt(resolved.origin);
+      await this.audit(user, companyId, "SEO_WORKSPACE_ROBOTS", client.id, { website: resolved.origin });
+      return {
+        client: {
+          id: client.id,
+          name: client.businessName || client.name,
+          website: resolved.origin,
+        },
+        origin: resolved.origin,
+        robotsTxt,
+        sitemapHint: `${resolved.origin}/sitemap.xml`,
+        correctionNote: resolved.correctionNote,
+        note: "Download and upload robots.txt to your website document root. Adjust Disallow paths for your stack before publishing.",
+      };
+    } catch (e) {
+      throw new BadRequestException(e instanceof Error ? e.message : "robots.txt generation failed");
     }
-    const robotsTxt = buildRobotsTxt(origin);
-    await this.audit(user, companyId, "SEO_WORKSPACE_ROBOTS", client.id, { website: origin });
-    return {
-      client,
-      origin,
-      robotsTxt,
-      sitemapHint: `${origin}/sitemap.xml`,
-      note: "Download and upload robots.txt to your website document root. Adjust Disallow paths for your stack before publishing.",
-    };
   }
 
   private async audit(user: AuthUser, companyId: string, action: string, entityId: string, metadata?: object) {
