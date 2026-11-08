@@ -75,11 +75,28 @@ export default function BusinessConsultantPage() {
   async function saveProfile(e: FormEvent, confirm = false) {
     e.preventDefault();
     if (!clientId) return;
+    if (confirm && !(form.competitors || "").trim()) {
+      toast.error("Competitors required", "Auto-fill competitors from the website URL first.");
+      return;
+    }
     setBusy(true);
     try {
+      let nextForm = { ...form };
+      if (!(nextForm.competitors || "").trim() && (nextForm.websiteUrl || "").trim()) {
+        const filled = await apiFetch<{
+          competitors: string;
+          message?: string;
+        }>(`/companies/${companyId}/growth/suggest-competitors`, {
+          method: "POST",
+          body: JSON.stringify({ clientId, websiteUrl: nextForm.websiteUrl }),
+        });
+        nextForm = { ...nextForm, competitors: filled.competitors };
+        setForm(nextForm);
+        toast.success("Competitors auto-filled", filled.message || "From website analysis");
+      }
       await apiFetch(`/companies/${companyId}/growth/profile/${clientId}`, {
         method: "PATCH",
-        body: JSON.stringify({ ...form, confirm }),
+        body: JSON.stringify({ ...nextForm, confirm }),
       });
       toast.success("Profile saved", confirm ? "Marked as confirmed." : "Business profile updated.");
     } catch (err) {
@@ -89,17 +106,67 @@ export default function BusinessConsultantPage() {
     }
   }
 
-  async function run(kind: "business" | "competitors") {
+  async function autoFillCompetitors() {
     if (!clientId) return;
+    if (!(form.websiteUrl || "").trim()) {
+      toast.error("Website URL needed", "Enter the business website URL first.");
+      return;
+    }
     setBusy(true);
     try {
-      const path = kind === "business" ? "business-analysis" : "competitor-analysis";
-      const res = await apiFetch(`/companies/${companyId}/growth/${path}`, {
-        method: "POST",
-        body: JSON.stringify({ clientId }),
+      // Persist current URL/profile context first so analysis uses latest fields.
+      await apiFetch(`/companies/${companyId}/growth/profile/${clientId}`, {
+        method: "PATCH",
+        body: JSON.stringify(form),
       });
+      const filled = await apiFetch<{
+        competitors: string;
+        message?: string;
+        category?: string;
+      }>(`/companies/${companyId}/growth/suggest-competitors`, {
+        method: "POST",
+        body: JSON.stringify({ clientId, websiteUrl: form.websiteUrl }),
+      });
+      setForm((prev) => ({ ...prev, competitors: filled.competitors }));
+      toast.success("Competitors filled", filled.message || filled.category || "Ready");
+    } catch (err) {
+      toast.error("Auto-fill failed", err instanceof Error ? err.message : "Error");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function run(kind: "business" | "competitors") {
+    if (!clientId) return;
+    if (kind === "competitors" && !(form.websiteUrl || "").trim() && !(form.competitors || "").trim()) {
+      toast.error("Website URL needed", "Add a website URL so competitors can be taken automatically.");
+      return;
+    }
+    setBusy(true);
+    try {
+      await apiFetch(`/companies/${companyId}/growth/profile/${clientId}`, {
+        method: "PATCH",
+        body: JSON.stringify(form),
+      });
+      const path = kind === "business" ? "business-analysis" : "competitor-analysis";
+      const res = await apiFetch<{ result?: unknown } & Record<string, unknown>>(
+        `/companies/${companyId}/growth/${path}`,
+        {
+          method: "POST",
+          body: JSON.stringify({ clientId, websiteUrl: form.websiteUrl }),
+        },
+      );
       if (kind === "business") setAnalysis(res);
-      else setCompetitors(res);
+      else {
+        setCompetitors(res);
+        // Refresh profile competitors after auto-fill during analysis
+        const profile = await apiFetch<{ profile: Record<string, string | null> }>(
+          `/companies/${companyId}/growth/profile/${clientId}`,
+        );
+        if (profile.profile?.competitors) {
+          setForm((prev) => ({ ...prev, competitors: String(profile.profile.competitors) }));
+        }
+      }
       toast.success("Analysis ready");
     } catch (err) {
       toast.error("Analysis failed", err instanceof Error ? err.message : "Error");
@@ -126,7 +193,23 @@ export default function BusinessConsultantPage() {
                 : ""
             }`}
           >
-            {label}
+            {key === "competitors" ? (
+              <span className="flex flex-wrap items-center justify-between gap-2">
+                <span>
+                  {label} <span className="text-brand-error">*</span>
+                </span>
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={autoFillCompetitors}
+                  className="rounded-lg border border-brand-primary/40 bg-brand-primary/10 px-3 py-1 text-[11px] font-semibold text-brand-primary"
+                >
+                  Auto-fill from website
+                </button>
+              </span>
+            ) : (
+              label
+            )}
             {key === "description" ||
             key === "productsServices" ||
             key === "competitors" ||
@@ -139,6 +222,12 @@ export default function BusinessConsultantPage() {
                 className="mt-1 min-h-[88px] w-full rounded-xl border border-white/10 bg-ink-elevated px-3 py-2 text-sm text-white"
                 value={form[key] || ""}
                 onChange={(e) => setForm({ ...form, [key]: e.target.value })}
+                required={key === "competitors"}
+                placeholder={
+                  key === "competitors"
+                    ? "Click Auto-fill from website — competitors are taken from your site + category"
+                    : undefined
+                }
               />
             ) : (
               <input
@@ -147,6 +236,11 @@ export default function BusinessConsultantPage() {
                 onChange={(e) => setForm({ ...form, [key]: e.target.value })}
               />
             )}
+            {key === "competitors" ? (
+              <p className="mt-1 text-[11px] text-content-muted">
+                Required. We analyze the website URL and fill real competitors for your category. You can edit after.
+              </p>
+            ) : null}
           </label>
         ))}
         <div className="flex flex-wrap gap-2 lg:col-span-2">
@@ -194,7 +288,7 @@ export default function BusinessConsultantPage() {
             <CompetitorAnalysisView data={competitors} />
           ) : (
             <p className="text-sm text-content-muted">
-              Competitors come from profile names/URLs only — never invented brands.
+              Auto-fill competitors from the website, then run competitor analysis for a clear comparison.
             </p>
           )}
         </GrowthCard>

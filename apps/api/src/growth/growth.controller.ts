@@ -80,6 +80,15 @@ export class GrowthController {
     return this.growth.runSeoAnalysis(companyId, user, dto);
   }
 
+  @Post("suggest-competitors")
+  suggestCompetitors(
+    @Param("companyId") companyId: string,
+    @CurrentUser() user: AuthUser,
+    @Body() dto: RunGrowthAnalysisDto,
+  ) {
+    return this.growth.suggestCompetitors(companyId, user, { ...dto, save: true });
+  }
+
   @Post("competitor-analysis")
   competitors(
     @Param("companyId") companyId: string,

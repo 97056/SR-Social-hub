@@ -20,6 +20,7 @@ import type {
   UpdateOpportunityDto,
   UpsertGrowthProfileDto,
 } from "./dto/growth.dto";
+import { formatCompetitorsField, suggestCompetitorsFromSignals } from "./growth-competitors.util";
 import { toDbSafeJson, toDbSafeText } from "./growth-db-safe.util";
 import { fetchPublicWebsite } from "./growth-website.util";
 
@@ -164,9 +165,10 @@ export class GrowthService {
       throw new BadRequestException(e instanceof Error ? e.message : "Website fetch failed");
     }
     const issues = this.buildWebsiteIssues(snapshot);
+    const { htmlLower: _html, ...safeSnapshot } = snapshot;
     const result = {
       summary: `Website audit for ${snapshot.finalUrl}`,
-      snapshot,
+      snapshot: safeSnapshot,
       issues,
       measuredVsEstimated: {
         measured: ["HTTP status", "title", "meta description", "H1-H3 text", "viewport meta", "CTA keyword presence"],
@@ -266,8 +268,76 @@ export class GrowthService {
       : undefined);
   }
 
-  async runCompetitorAnalysis(companyId: string, user: AuthUser, dto: RunGrowthAnalysisDto) {
+  async suggestCompetitors(companyId: string, user: AuthUser, dto: RunGrowthAnalysisDto & { save?: boolean }) {
     const profile = await this.requireProfile(companyId, dto.clientId);
+    const url = dto.websiteUrl || profile.websiteUrl;
+    if (!url) throw new BadRequestException("Website URL is required to auto-fill competitors");
+
+    await this.consumeAi(companyId, user, "growth_suggest_competitors");
+
+    let snapshot: Awaited<ReturnType<typeof fetchPublicWebsite>> | null = null;
+    try {
+      snapshot = await fetchPublicWebsite(url);
+    } catch (e) {
+      throw new BadRequestException(e instanceof Error ? e.message : "Website fetch failed");
+    }
+
+    const suggested = suggestCompetitorsFromSignals({
+      industry: profile.industry,
+      category: profile.category,
+      description: profile.description,
+      productsServices: profile.productsServices,
+      targetAudience: profile.targetAudience,
+      businessName: profile.businessName,
+      websiteTitle: snapshot.title,
+      websiteDescription: snapshot.description,
+      websiteExcerpt: snapshot.rawExcerpt,
+      htmlLower: snapshot.htmlLower,
+    });
+
+    if (!suggested.items.length) {
+      throw new BadRequestException("Could not map competitors for this website yet");
+    }
+
+    const competitorsText = toDbSafeText(formatCompetitorsField(suggested.items));
+    const shouldSave = dto.save !== false;
+    let profileOut = profile;
+    if (shouldSave) {
+      profileOut = await this.prisma.growthBusinessProfile.update({
+        where: { clientId: dto.clientId },
+        data: {
+          competitors: competitorsText,
+          websiteUrl: snapshot.finalUrl || url,
+        },
+      });
+    }
+
+    await this.audit(user, companyId, "GROWTH_COMPETITORS_SUGGESTED", "GrowthBusinessProfile", profileOut.id, {
+      category: suggested.category,
+      count: suggested.items.length,
+      sourceUrl: snapshot.finalUrl,
+    });
+
+    return {
+      category: suggested.category,
+      sourceUrl: snapshot.finalUrl,
+      competitors: competitorsText,
+      items: suggested.items,
+      profile: profileOut,
+      message: `Filled ${suggested.items.length} competitors from website analysis (${suggested.category}).`,
+    };
+  }
+
+  async runCompetitorAnalysis(companyId: string, user: AuthUser, dto: RunGrowthAnalysisDto) {
+    let profile = await this.requireProfile(companyId, dto.clientId);
+    // Always ensure competitors exist — auto-fill from website when blank.
+    if (!(profile.competitors || "").trim()) {
+      if (!(dto.websiteUrl || profile.websiteUrl)) {
+        throw new BadRequestException("Add a website URL first so we can auto-fill competitors");
+      }
+      const filled = await this.suggestCompetitors(companyId, user, { ...dto, save: true });
+      profile = filled.profile;
+    }
     await this.consumeAi(companyId, user, "growth_competitor_analysis");
     const named = (profile.competitors || "")
       .split(/[\n,;]+/)
@@ -301,25 +371,11 @@ export class GrowthService {
         confidence: site ? "MEDIUM" : "LOW",
       });
     }
-    if (!competitors.length) {
-      competitors.push({
-        businessName: "No named competitors yet",
-        website: null,
-        productsServices: [],
-        positioning: "Add competitor names or URLs in the business profile. We will not invent competitor companies.",
-        publicMarketing: [],
-        strengths: [],
-        weaknesses: [],
-        differentiate: "Confirm 3 real competitors before differentiation planning.",
-        sourceLinks: [],
-        analyzedAt: new Date().toISOString(),
-        confidence: "NONE",
-      });
-    }
     const result = {
       summary: `Competitor review for ${profile.businessName || "client"}`,
       competitors,
-      limitations: "Never invents competitor data. Only profile-listed names/URLs and publicly fetched pages are used.",
+      limitations:
+        "Competitors are taken from website-based auto-fill and/or your profile list, then enriched with public page signals where URLs are reachable.",
     };
     return this.saveRun(companyId, dto.clientId, user, "COMPETITOR", "Competitor analysis", dto, result);
   }

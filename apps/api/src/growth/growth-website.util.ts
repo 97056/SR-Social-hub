@@ -43,6 +43,8 @@ export type WebsiteSnapshot = {
   contactHints: string[];
   brokenNote: string | null;
   rawExcerpt: string;
+  /** Lowercased HTML sample for competitor brand matching (not persisted). */
+  htmlLower?: string;
   fetchedAt: string;
 };
 
@@ -87,6 +89,7 @@ export async function fetchPublicWebsite(rawUrl: string): Promise<WebsiteSnapsho
       contactHints,
       brokenNote: res.ok ? null : `HTTP ${res.status} while fetching the site`,
       rawExcerpt: toDbSafeText(stripTags(html).replace(/\s+/g, " ").trim().slice(0, 1200)),
+      htmlLower: lower.slice(0, 80_000),
       fetchedAt: new Date().toISOString(),
     };
   } finally {
