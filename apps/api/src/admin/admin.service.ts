@@ -123,6 +123,7 @@ const DEFAULT_SYSTEM = {
     aiStudio: false,
     billing: false,
     publishing: false,
+    aiGrowthCenter: true,
   },
 };
 
@@ -886,7 +887,12 @@ export class AdminService {
 
   async getSystemSettings() {
     const row = await this.prisma.systemSetting.findUnique({ where: { key: "system" } });
-    return { ...DEFAULT_SYSTEM, ...((row?.value as object) ?? {}) } as typeof DEFAULT_SYSTEM;
+    const merged = { ...DEFAULT_SYSTEM, ...((row?.value as object) ?? {}) } as typeof DEFAULT_SYSTEM;
+    merged.featureFlags = {
+      ...DEFAULT_SYSTEM.featureFlags,
+      ...(((row?.value as { featureFlags?: Record<string, boolean> } | null)?.featureFlags) ?? {}),
+    };
+    return merged;
   }
 
   async updateSystemSettings(actor: AuthUser, dto: UpdateSystemSettingsDto) {
@@ -908,6 +914,24 @@ export class AdminService {
           where: { key },
           create: { key, enabled, description: key },
           update: { enabled },
+        });
+      }
+      if (typeof dto.featureFlags.aiGrowthCenter === "boolean") {
+        const growthRow = await this.prisma.systemSetting.findUnique({ where: { key: "growth_ai" } });
+        const growthValue = {
+          provider: "sr-growth-mock",
+          model: "growth-heuristics-v1",
+          dailyLimit: 200,
+          monthlyLimit: 2000,
+          maxTokens: 4096,
+          alertEmail: "support@srsocialhub.in",
+          ...((growthRow?.value as object) ?? {}),
+          enabled: dto.featureFlags.aiGrowthCenter,
+        };
+        await this.prisma.systemSetting.upsert({
+          where: { key: "growth_ai" },
+          create: { key: "growth_ai", value: growthValue },
+          update: { value: growthValue },
         });
       }
     }

@@ -27,10 +27,25 @@ async function main() {
   }
 
   await pg.start();
+  // Prefer UTF8 so Growth website scrapes (INR symbol, etc.) do not fail on Windows WIN1252 defaults.
   try {
-    await pg.createDatabase("sr_social_hub");
+    const client = pg.getPgClient();
+    await client.connect();
+    try {
+      await client.query(
+        "CREATE DATABASE sr_social_hub WITH ENCODING 'UTF8' LC_COLLATE='C' LC_CTYPE='C' TEMPLATE template0",
+      );
+    } catch {
+      // database may already exist (often already WIN1252 on older local clusters)
+    } finally {
+      await client.end().catch(() => undefined);
+    }
   } catch {
-    // database may already exist
+    try {
+      await pg.createDatabase("sr_social_hub");
+    } catch {
+      // database may already exist
+    }
   }
 
   const databaseUrl = `postgresql://sr:sr_dev_password@127.0.0.1:${port}/sr_social_hub?schema=public`;

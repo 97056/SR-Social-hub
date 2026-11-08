@@ -7,6 +7,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { cn } from "@/lib/cn";
 import { apiFetch, getSessionUser, getToken, setSessionUser, setToken } from "@/lib/api";
 import type { NavItem } from "@/lib/nav";
+import { filterGrowthNav } from "@/lib/nav";
 import { firstLetter, profileHrefFromPath } from "@/lib/profile";
 import { NavGlyph } from "@/components/nav-icons";
 
@@ -92,6 +93,8 @@ function hexToRgba(hex: string, alpha: number) {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
+const SIDEBAR_SCROLL_KEY = "sr_sidebar_scroll_y";
+
 function NavLinks({
   nav,
   pathname,
@@ -101,45 +104,88 @@ function NavLinks({
   pathname: string;
   onNavigate?: () => void;
 }) {
+  const bestHref = nav
+    .map((item) => item.href)
+    .filter((href) => pathname === href || pathname.startsWith(`${href}/`))
+    .sort((a, b) => b.length - a.length)[0];
+
   return (
     <nav className="space-y-1.5 px-3 pb-6">
-      {nav.map((item) => {
-        const active =
-          pathname === item.href ||
-          (item.href !== "/admin" && pathname.startsWith(`${item.href}/`)) ||
-          (item.href === "/admin" && pathname === "/admin");
+      {nav.map((item, index) => {
+        const prev = nav[index - 1];
+        const showSection = Boolean(item.section && item.section !== prev?.section);
+        const active = item.href === bestHref || (item.href === "/admin" && pathname === "/admin");
         return (
-          <Link
-            key={item.href}
-            href={item.href}
-            title={item.label}
-            onClick={onNavigate}
-            className={cn(
-              "app-nav-link group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition",
-              active ? "is-active text-[var(--text)]" : "text-[var(--muted)] hover:text-[var(--text)]",
-            )}
-            style={{
-              ["--nav-accent" as string]: item.color,
-              background: active ? hexToRgba(item.color, 0.14) : undefined,
-              boxShadow: active ? `inset 3px 0 0 ${item.color}` : undefined,
-            }}
-          >
-            <span
-              className="app-nav-icon grid h-9 w-9 shrink-0 place-items-center rounded-xl border"
+          <div key={item.href}>
+            {showSection ? (
+              <p className="mb-2 mt-4 px-3 text-[10px] font-semibold uppercase tracking-[0.22em] text-[var(--muted)]">
+                {item.section}
+              </p>
+            ) : null}
+            <Link
+              href={item.href}
+              title={item.label}
+              data-active={active ? "true" : undefined}
+              onClick={() => {
+                // Persist current scroll before route change remounts the shell.
+                const aside = document.querySelector<HTMLElement>("[data-app-sidebar]");
+                if (aside) sessionStorage.setItem(SIDEBAR_SCROLL_KEY, String(aside.scrollTop));
+                onNavigate?.();
+              }}
+              className={cn(
+                "app-nav-link group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition",
+                active ? "is-active text-[var(--text)]" : "text-[var(--muted)] hover:text-[var(--text)]",
+              )}
               style={{
-                color: item.color,
-                background: hexToRgba(item.color, 0.16),
-                borderColor: hexToRgba(item.color, 0.35),
+                ["--nav-accent" as string]: item.color,
+                background: active ? hexToRgba(item.color, 0.14) : undefined,
+                boxShadow: active ? `inset 3px 0 0 ${item.color}` : undefined,
               }}
             >
-              <NavGlyph name={item.icon} className="h-[1.05rem] w-[1.05rem]" />
-            </span>
-            <span className={cn("truncate font-medium", active && "text-[var(--text)]")}>{item.label}</span>
-          </Link>
+              <span
+                className="app-nav-icon grid h-9 w-9 shrink-0 place-items-center rounded-xl border"
+                style={{
+                  color: item.color,
+                  background: hexToRgba(item.color, 0.16),
+                  borderColor: hexToRgba(item.color, 0.35),
+                }}
+              >
+                <NavGlyph name={item.icon} className="h-[1.05rem] w-[1.05rem]" />
+              </span>
+              <span className={cn("truncate font-medium", active && "text-[var(--text)]")}>{item.label}</span>
+            </Link>
+          </div>
         );
       })}
     </nav>
   );
+}
+
+function useSidebarScrollRestore(pathname: string) {
+  const asideRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    const el = asideRef.current;
+    if (!el) return;
+    const onScroll = () => sessionStorage.setItem(SIDEBAR_SCROLL_KEY, String(el.scrollTop));
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => el.removeEventListener("scroll", onScroll);
+  }, []);
+
+  useEffect(() => {
+    const el = asideRef.current;
+    if (!el) return;
+    const saved = Number(sessionStorage.getItem(SIDEBAR_SCROLL_KEY) || "0");
+    if (Number.isFinite(saved) && saved > 0) el.scrollTop = saved;
+    // Keep the active Growth item visible without jumping to absolute top.
+    requestAnimationFrame(() => {
+      const active = el.querySelector<HTMLElement>("[data-active='true']");
+      active?.scrollIntoView({ block: "nearest", inline: "nearest" });
+      sessionStorage.setItem(SIDEBAR_SCROLL_KEY, String(el.scrollTop));
+    });
+  }, [pathname]);
+
+  return asideRef;
 }
 
 export function AppShell({
@@ -162,6 +208,7 @@ export function AppShell({
 }) {
   const pathname = usePathname();
   const router = useRouter();
+  const sidebarRef = useSidebarScrollRestore(pathname);
   const { theme, toggle } = useTheme();
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
@@ -171,18 +218,24 @@ export function AppShell({
   const [unread, setUnread] = useState(0);
   const [platformLogo, setPlatformLogo] = useState<string | null>(null);
   const [platformName, setPlatformName] = useState<string | null>(null);
+  const [growthCenterEnabled, setGrowthCenterEnabled] = useState(true);
   const notifRef = useRef<HTMLDivElement>(null);
+
+  const visibleNav = useMemo(
+    () => filterGrowthNav(nav, growthCenterEnabled),
+    [nav, growthCenterEnabled],
+  );
 
   const activeTone =
     tone ||
-    nav.find((n) => pathname === n.href || pathname.startsWith(`${n.href}/`))?.color ||
+    visibleNav.find((n) => pathname === n.href || pathname.startsWith(`${n.href}/`))?.color ||
     "#00D2FF";
 
   const searchHits = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return [];
-    return nav.filter((n) => n.label.toLowerCase().includes(q)).slice(0, 6);
-  }, [nav, search]);
+    return visibleNav.filter((n) => n.label.toLowerCase().includes(q)).slice(0, 6);
+  }, [visibleNav, search]);
 
   useEffect(() => {
     setOpen(false);
@@ -211,6 +264,12 @@ export function AppShell({
         setPlatformLogo("/brand/logo.png");
         setPlatformName("SR Social Hub");
       });
+    fetch(`${api}/api/v1/public/status`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: { growthCenterEnabled?: boolean } | null) => {
+        setGrowthCenterEnabled(data?.growthCenterEnabled !== false);
+      })
+      .catch(() => setGrowthCenterEnabled(true));
     if (!getToken()) return;
     apiFetch<MeResponse>("/auth/me")
       .then((res) => {
@@ -224,6 +283,21 @@ export function AppShell({
       .then((r) => setUnread(r.count))
       .catch(() => setUnread(0));
   }, [pathname]);
+
+  useEffect(() => {
+    if (growthCenterEnabled) return;
+    if (pathname === "/admin/growth" || pathname.startsWith("/admin/growth/")) return;
+    if (!pathname.includes("/growth")) return;
+    if (pathname.startsWith("/app/")) {
+      const companyId = pathname.split("/")[2];
+      if (companyId) router.replace(`/app/${companyId}/dashboard`);
+      return;
+    }
+    if (pathname.startsWith("/client/")) {
+      const clientId = pathname.split("/")[2];
+      if (clientId) router.replace(`/client/${clientId}/dashboard`);
+    }
+  }, [growthCenterEnabled, pathname, router]);
 
   const shellLogo = brandLogoUrl || platformLogo || "/brand/logo.png";
   const shellName = brandName || platformName || "SR Social Hub";
@@ -274,7 +348,11 @@ export function AppShell({
       className="app-shell min-h-screen lg:grid lg:grid-cols-[272px_1fr]"
       style={{ ["--page-accent" as string]: activeTone }}
     >
-      <aside className="app-sidebar hidden max-h-screen overflow-y-auto border-r border-[var(--border)] bg-[var(--sidebar)] lg:sticky lg:top-0 lg:block lg:min-h-screen">
+      <aside
+        ref={sidebarRef}
+        data-app-sidebar
+        className="app-sidebar hidden max-h-screen overflow-y-auto border-r border-[var(--border)] bg-[var(--sidebar)] lg:sticky lg:top-0 lg:block lg:min-h-screen"
+      >
         <div className="flex items-center gap-3 border-b border-[var(--border)] px-5 py-5">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
@@ -291,7 +369,7 @@ export function AppShell({
           </div>
         </div>
         <div className="pt-3">
-          <NavLinks nav={nav} pathname={pathname} />
+          <NavLinks nav={visibleNav} pathname={pathname} />
         </div>
       </aside>
 
@@ -462,6 +540,7 @@ export function AppShell({
                 animate={{ x: 0 }}
                 exit={{ x: -280 }}
                 transition={{ type: "spring", stiffness: 320, damping: 32 }}
+                data-app-sidebar
                 className="relative flex h-full w-[min(86vw,288px)] flex-col overflow-y-auto border-r border-[var(--border)] bg-[var(--sidebar)]"
               >
                 <div className="flex items-center justify-between gap-3 px-4 py-5">
@@ -488,7 +567,7 @@ export function AppShell({
                     Close
                   </button>
                 </div>
-                <NavLinks nav={nav} pathname={pathname} onNavigate={() => setOpen(false)} />
+                <NavLinks nav={visibleNav} pathname={pathname} onNavigate={() => setOpen(false)} />
               </motion.aside>
             </motion.div>
           ) : null}

@@ -1,22 +1,28 @@
 import { Controller, Get } from "@nestjs/common";
 import { ApiTags } from "@nestjs/swagger";
 import { AdminService } from "../admin/admin.service";
+import { GrowthService } from "../growth/growth.service";
 
 @ApiTags("public")
 @Controller("public")
 export class PublicController {
-  constructor(private readonly admin: AdminService) {}
+  constructor(
+    private readonly admin: AdminService,
+    private readonly growth: GrowthService,
+  ) {}
 
   @Get("status")
   async status() {
-    const [settings, branding] = await Promise.all([
+    const [settings, branding, growthCenterEnabled] = await Promise.all([
       this.admin.getSystemSettings(),
       this.admin.getBranding(),
+      this.growth.isGrowthCenterEnabled(),
     ]);
     return {
       maintenanceMode: Boolean(settings.maintenanceMode),
       platformName: branding.platformName ?? "SR Social Hub",
       supportEmail: branding.supportEmail ?? "support@srsocialhub.in",
+      growthCenterEnabled,
     };
   }
 

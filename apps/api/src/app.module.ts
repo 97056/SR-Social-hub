@@ -18,6 +18,7 @@ import { MediaModule } from "./media/media.module";
 import { PublishingModule } from "./publishing/publishing.module";
 import { PublicModule } from "./public/public.module";
 import { SocialModule } from "./social/social.module";
+import { GrowthModule } from "./growth/growth.module";
 
 @Module({
   imports: [
@@ -39,6 +40,7 @@ import { SocialModule } from "./social/social.module";
     NotificationsModule,
     AiModule,
     AnalyticsModule,
+    GrowthModule,
     AdminModule,
   ],
 })
