@@ -3,7 +3,8 @@ WORKDIR /app
 RUN apt-get update -y && apt-get install -y --no-install-recommends openssl ca-certificates \
   && rm -rf /var/lib/apt/lists/*
 COPY package.json package-lock.json ./
-RUN npm ci
+# Prefer lock sync; fall back when express/nest peer ranges drift on Windows-generated locks.
+RUN npm ci || npm install
 
 FROM deps AS build
 COPY prisma ./prisma
