@@ -20,6 +20,7 @@ import { PublicModule } from "./public/public.module";
 import { SocialModule } from "./social/social.module";
 import { GrowthModule } from "./growth/growth.module";
 import { SeoWorkspaceModule } from "./seo-workspace/seo-workspace.module";
+import { SupportChatModule } from "./support-chat/support-chat.module";
 
 @Module({
   imports: [
@@ -43,6 +44,7 @@ import { SeoWorkspaceModule } from "./seo-workspace/seo-workspace.module";
     AnalyticsModule,
     GrowthModule,
     SeoWorkspaceModule,
+    SupportChatModule,
     AdminModule,
   ],
 })

@@ -10,6 +10,7 @@ import type { NavItem } from "@/lib/nav";
 import { filterGrowthNav } from "@/lib/nav";
 import { firstLetter, profileHrefFromPath } from "@/lib/profile";
 import { NavGlyph } from "@/components/nav-icons";
+import { SupportChatAgent } from "@/components/support-chat-agent";
 
 export type { NavItem };
 
@@ -588,6 +589,7 @@ export function AppShell({
           {children}
         </motion.main>
       </div>
+      <SupportChatAgent />
     </div>
   );
 }
