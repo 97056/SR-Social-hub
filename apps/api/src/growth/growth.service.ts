@@ -24,8 +24,6 @@ import { formatCompetitorsField, suggestCompetitorsFromSignals } from "./growth-
 import { toDbSafeJson, toDbSafeText } from "./growth-db-safe.util";
 import { fetchPublicWebsite, normalizeWebsiteUrl } from "./growth-website.util";
 
-// normalizeWebsiteUrl is also used by SEO https checks
-
 const DEFAULT_AI_SETTINGS = {
   enabled: true,
   provider: "sr-growth-mock",
