@@ -1,7 +1,19 @@
-import { Controller, Get } from "@nestjs/common";
+import { Body, Controller, Get, Post } from "@nestjs/common";
 import { ApiTags } from "@nestjs/swagger";
+import { IsOptional, IsString, MaxLength } from "class-validator";
 import { AdminService } from "../admin/admin.service";
 import { GrowthService } from "../growth/growth.service";
+
+class PageViewDto {
+  @IsString()
+  @MaxLength(200)
+  path!: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  referrer?: string;
+}
 
 @ApiTags("public")
 @Controller("public")
@@ -10,6 +22,11 @@ export class PublicController {
     private readonly admin: AdminService,
     private readonly growth: GrowthService,
   ) {}
+
+  @Post("pageview")
+  pageview(@Body() dto: PageViewDto) {
+    return this.admin.recordPageView(dto.path);
+  }
 
   @Get("status")
   async status() {

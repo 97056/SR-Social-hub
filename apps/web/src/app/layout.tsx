@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Bricolage_Grotesque, Figtree } from "next/font/google";
 import { DisableNativeValidation } from "@/components/disable-native-validation";
+import { PageViewBeacon } from "@/components/page-view-beacon";
 import { ThemeBoot } from "@/components/theme-boot";
 import { ToastProvider } from "@/components/toast";
 import { fetchPublicBranding } from "@/lib/branding";
@@ -102,6 +103,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <ToastProvider>
           <ThemeBoot />
           <DisableNativeValidation />
+          <PageViewBeacon />
           {children}
         </ToastProvider>
       </body>

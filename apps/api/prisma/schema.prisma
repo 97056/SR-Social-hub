@@ -1119,3 +1119,17 @@ model GrowthJob {
   @@index([companyId, status, createdAt])
   @@index([status, createdAt])
 }
+
+/** Aggregated public marketing pageviews (landing, register, etc.) by UTC day. */
+model SitePageViewDaily {
+  id        String   @id @default(cuid())
+  path      String
+  day       DateTime @db.Date
+  views     Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([path, day])
+  @@index([day])
+  @@index([path, day])
+}

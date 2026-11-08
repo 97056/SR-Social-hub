@@ -131,7 +131,215 @@ const DEFAULT_SYSTEM = {
 export class AdminService {
   constructor(private readonly prisma: PrismaService) {}
 
+  private utcDay(d = new Date()): Date {
+    return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+  }
+
+  private startOfUtcWeek(d = new Date()): Date {
+    const day = this.utcDay(d);
+    const dow = day.getUTCDay(); // 0 Sun
+    const mondayOffset = dow === 0 ? -6 : 1 - dow;
+    day.setUTCDate(day.getUTCDate() + mondayOffset);
+    return day;
+  }
+
+  private startOfUtcMonth(d = new Date()): Date {
+    return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1));
+  }
+
+  private daysAgoUtc(n: number): Date {
+    const d = this.utcDay();
+    d.setUTCDate(d.getUTCDate() - n);
+    return d;
+  }
+
+  normalizePublicPath(raw: string): string | null {
+    let path = (raw || "/").trim();
+    if (!path.startsWith("/")) path = `/${path}`;
+    try {
+      path = decodeURIComponent(path).split("?")[0].split("#")[0];
+    } catch {
+      return null;
+    }
+    if (path.length > 180) return null;
+    // Only track marketing / auth surfaces — never app/admin/client portals
+    if (
+      path.startsWith("/app") ||
+      path.startsWith("/admin") ||
+      path.startsWith("/client") ||
+      path.startsWith("/api")
+    ) {
+      return null;
+    }
+    const allowed =
+      path === "/" ||
+      [
+        "/register",
+        "/login",
+        "/forgot-password",
+        "/reset-password",
+        "/activate",
+        "/privacy",
+        "/terms",
+        "/support",
+        "/delete-account",
+        "/integrations",
+        "/invite/accept",
+      ].includes(path);
+    return allowed ? path : null;
+  }
+
+  async recordPageView(rawPath: string) {
+    const path = this.normalizePublicPath(rawPath);
+    if (!path) return { ok: false as const, reason: "path_not_tracked" };
+    const day = this.utcDay();
+    await this.prisma.sitePageViewDaily.upsert({
+      where: { path_day: { path, day } },
+      create: { path, day, views: 1 },
+      update: { views: { increment: 1 } },
+    });
+    return { ok: true as const, path, day: day.toISOString().slice(0, 10) };
+  }
+
+  private async sumSucceededPayments(from?: Date, to?: Date) {
+    const where: { status: "SUCCEEDED"; createdAt?: { gte?: Date; lt?: Date } } = {
+      status: "SUCCEEDED",
+    };
+    if (from || to) {
+      where.createdAt = {};
+      if (from) where.createdAt.gte = from;
+      if (to) where.createdAt.lt = to;
+    }
+    const agg = await this.prisma.payment.aggregate({
+      where,
+      _sum: { amountInr: true },
+      _count: true,
+    });
+    return { amountInr: agg._sum.amountInr ?? 0, count: agg._count };
+  }
+
+  private async visitorStats() {
+    const today = this.utcDay();
+    const monthStart = this.startOfUtcMonth();
+    const weekStart = this.startOfUtcWeek();
+    const seriesFrom = this.daysAgoUtc(29);
+
+    const [allRows, monthRows, weekRows, todayRows, landingAll, seriesRows] = await Promise.all([
+      this.prisma.sitePageViewDaily.aggregate({ _sum: { views: true } }),
+      this.prisma.sitePageViewDaily.aggregate({
+        where: { day: { gte: monthStart } },
+        _sum: { views: true },
+      }),
+      this.prisma.sitePageViewDaily.aggregate({
+        where: { day: { gte: weekStart } },
+        _sum: { views: true },
+      }),
+      this.prisma.sitePageViewDaily.aggregate({
+        where: { day: today },
+        _sum: { views: true },
+      }),
+      this.prisma.sitePageViewDaily.aggregate({
+        where: { path: "/" },
+        _sum: { views: true },
+      }),
+      this.prisma.sitePageViewDaily.findMany({
+        where: { day: { gte: seriesFrom } },
+        select: { path: true, day: true, views: true },
+        orderBy: { day: "asc" },
+      }),
+    ]);
+
+    const dayMs = 86_400_000;
+    const dayIndex = (d: Date) => Math.floor(this.utcDay(d).getTime() / dayMs);
+    const byDay = new Map<number, number>();
+    const landingByDay = new Map<number, number>();
+    for (const row of seriesRows) {
+      const key = dayIndex(row.day);
+      byDay.set(key, (byDay.get(key) ?? 0) + row.views);
+      if (row.path === "/") landingByDay.set(key, (landingByDay.get(key) ?? 0) + row.views);
+    }
+
+    const visitorsDaily: Array<{ date: string; visitors: number; landing: number }> = [];
+    for (let i = 29; i >= 0; i--) {
+      const d = this.daysAgoUtc(i);
+      const key = dayIndex(d);
+      visitorsDaily.push({
+        date: d.toISOString().slice(0, 10),
+        visitors: byDay.get(key) ?? 0,
+        landing: landingByDay.get(key) ?? 0,
+      });
+    }
+
+    const monthViews = monthRows._sum.views ?? 0;
+    const daysElapsed = Math.max(1, new Date().getUTCDate());
+    const avgDailyMonth = Math.round(monthViews / daysElapsed);
+
+    const pathTotals = new Map<string, number>();
+    for (const row of seriesRows) {
+      pathTotals.set(row.path, (pathTotals.get(row.path) ?? 0) + row.views);
+    }
+    const topPaths = [...pathTotals.entries()]
+      .map(([path, views]) => ({ path, views }))
+      .sort((a, b) => b.views - a.views)
+      .slice(0, 8);
+
+    return {
+      overall: allRows._sum.views ?? 0,
+      today: todayRows._sum.views ?? 0,
+      thisWeek: weekRows._sum.views ?? 0,
+      thisMonth: monthViews,
+      averageDailyThisMonth: avgDailyMonth,
+      landingPageOverall: landingAll._sum.views ?? 0,
+      daily: visitorsDaily,
+      topPaths,
+    };
+  }
+
+  private async revenueSeriesAndBreakdown() {
+    const seriesFrom = this.daysAgoUtc(29);
+    const payments = await this.prisma.payment.findMany({
+      where: { status: "SUCCEEDED", createdAt: { gte: seriesFrom } },
+      select: {
+        amountInr: true,
+        createdAt: true,
+        company: { select: { plan: { select: { name: true, code: true } } } },
+      },
+      orderBy: { createdAt: "asc" },
+    });
+
+    const dayMs = 86_400_000;
+    const dayIndex = (d: Date) => Math.floor(this.utcDay(d).getTime() / dayMs);
+    const byDay = new Map<number, number>();
+    const byPlan = new Map<string, number>();
+    for (const p of payments) {
+      const key = dayIndex(p.createdAt);
+      byDay.set(key, (byDay.get(key) ?? 0) + p.amountInr);
+      const plan = p.company.plan?.name || p.company.plan?.code || "Unknown plan";
+      byPlan.set(plan, (byPlan.get(plan) ?? 0) + p.amountInr);
+    }
+
+    const daily: Array<{ date: string; revenueInr: number }> = [];
+    for (let i = 29; i >= 0; i--) {
+      const d = this.daysAgoUtc(i);
+      daily.push({
+        date: d.toISOString().slice(0, 10),
+        revenueInr: byDay.get(dayIndex(d)) ?? 0,
+      });
+    }
+
+    const byPlanPie = [...byPlan.entries()]
+      .map(([name, amountInr]) => ({ name, amountInr }))
+      .sort((a, b) => b.amountInr - a.amountInr);
+
+    return { daily, byPlan: byPlanPie };
+  }
+
   async overview() {
+    const today = this.utcDay();
+    const tomorrow = this.daysAgoUtc(-1);
+    const weekStart = this.startOfUtcWeek();
+    const monthStart = this.startOfUtcMonth();
+
     const [
       registeredCompanies,
       activeCompanies,
@@ -145,6 +353,13 @@ export class AdminService {
       failedPosts,
       recentActivity,
       plans,
+      revenueAllTime,
+      revenueToday,
+      revenueWeek,
+      revenueMonth,
+      visitors,
+      revenueCharts,
+      companiesByStatus,
     ] = await Promise.all([
       this.prisma.company.count(),
       this.prisma.company.count({ where: { status: "ACTIVE" } }),
@@ -164,6 +379,16 @@ export class AdminService {
         include: { actor: { select: { email: true, fullName: true } } },
       }),
       this.prisma.subscriptionPlan.findMany({ where: { isActive: true } }),
+      this.sumSucceededPayments(),
+      this.sumSucceededPayments(today, tomorrow),
+      this.sumSucceededPayments(weekStart),
+      this.sumSucceededPayments(monthStart),
+      this.visitorStats(),
+      this.revenueSeriesAndBreakdown(),
+      this.prisma.company.groupBy({
+        by: ["status"],
+        _count: { _all: true },
+      }),
     ]);
 
     const companiesWithPlans = await this.prisma.company.findMany({
@@ -190,6 +415,27 @@ export class AdminService {
         publishedPosts,
         failedPosts,
         enabledIntegrations: connectedPlatforms,
+        revenueAllTimeInr: revenueAllTime.amountInr,
+        revenueTodayInr: revenueToday.amountInr,
+        revenueThisWeekInr: revenueWeek.amountInr,
+        revenueThisMonthInr: revenueMonth.amountInr,
+        successfulPayments: revenueAllTime.count,
+        visitorsOverall: visitors.overall,
+        visitorsToday: visitors.today,
+        visitorsThisWeek: visitors.thisWeek,
+        visitorsThisMonth: visitors.thisMonth,
+        visitorsAverageDaily: visitors.averageDailyThisMonth,
+        landingPageViews: visitors.landingPageOverall,
+      },
+      charts: {
+        revenueDaily: revenueCharts.daily,
+        visitorsDaily: visitors.daily,
+        revenueByPlan: revenueCharts.byPlan,
+        companiesByStatus: companiesByStatus.map((row) => ({
+          status: row.status,
+          count: row._count._all,
+        })),
+        topPaths: visitors.topPaths,
       },
       recentActivity: recentActivity.map((a) => ({
         id: a.id,
