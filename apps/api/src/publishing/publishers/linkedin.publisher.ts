@@ -149,6 +149,14 @@ export class LinkedInPublisher implements PlatformPublisher {
         initText.slice(0, 180) ||
         `LinkedIn image init failed (HTTP ${initRes.status})`;
       const mapped = this.mapError(msg);
+      if (mapped.ok) {
+        return {
+          ok: false,
+          status: "FAILED",
+          retryable: false,
+          error: msg,
+        };
+      }
       return {
         ok: false,
         status: mapped.status,
