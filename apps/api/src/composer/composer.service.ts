@@ -254,13 +254,14 @@ export class ComposerService {
       const variant = post.variants.find((v) => v.platformCode === target.platformCode);
       const caption = variant?.caption ?? post.baseCaption;
       const title = variant?.title ?? "";
-      const description = variant?.description ?? "";
+      // Prefer explicit description; otherwise use caption (composer UI keeps them in sync).
+      const description = (variant?.description || caption || "").trim() ? variant?.description || caption : "";
 
       if (caption.length > rule.captionMax) {
         errors.push({
           code: "CAPTION_TOO_LONG",
           platform: target.platformCode,
-          message: `${target.platformCode} caption exceeds ${rule.captionMax} characters`,
+          message: `${target.platformCode} caption exceeds ${rule.captionMax} characters (${caption.length}/${rule.captionMax})`,
         });
       }
       if (rule.requiresTitle && !title.trim()) {
@@ -274,14 +275,14 @@ export class ComposerService {
         errors.push({
           code: "TITLE_TOO_LONG",
           platform: target.platformCode,
-          message: `${target.platformCode} title exceeds ${rule.titleMax}`,
+          message: `${target.platformCode} title exceeds ${rule.titleMax} (${title.length}/${rule.titleMax})`,
         });
       }
       if (rule.descriptionMax && description.length > rule.descriptionMax) {
         errors.push({
           code: "DESCRIPTION_TOO_LONG",
           platform: target.platformCode,
-          message: `${target.platformCode} description exceeds ${rule.descriptionMax}`,
+          message: `${target.platformCode} description exceeds ${rule.descriptionMax} (${description.length}/${rule.descriptionMax})`,
         });
       }
       if (rule.imageRequired && !post.mediaAsset) {

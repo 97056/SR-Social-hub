@@ -47,9 +47,51 @@ type Validation = {
   errors: Array<{ code: string; message: string; platform?: string }>;
   warnings: Array<{ code: string; message: string; platform?: string }>;
 };
-type Rules = Record<string, { captionMax: number; requiresTitle?: boolean; notes: string }>;
+type PlatformRule = {
+  captionMax: number;
+  titleMax?: number;
+  descriptionMax?: number;
+  requiresTitle?: boolean;
+  notes: string;
+};
+type Rules = Record<string, PlatformRule>;
 
 const STEPS = ["Client", "Media", "Content", "Platforms", "Variants", "Validate", "Submit"];
+
+/** Soft ceilings (e.g. Facebook ~63k) — show count, but don't red-warn until actually over. */
+function isHardCaptionLimit(max: number | undefined) {
+  return typeof max === "number" && max > 0 && max <= 5000;
+}
+
+function CharMeter({
+  label,
+  value,
+  max,
+  hard,
+}: {
+  label: string;
+  value: string;
+  max?: number;
+  hard?: boolean;
+}) {
+  if (!max || max <= 0) return null;
+  const len = value.length;
+  const over = len > max;
+  const warn = hard && len > Math.floor(max * 0.9) && !over;
+  const show = hard || over || len > 0;
+  if (!show) return null;
+  return (
+    <p
+      className={`text-xs ${
+        over ? "font-semibold text-brand-error" : warn ? "text-amber-300" : "text-content-muted"
+      }`}
+    >
+      {label}: {len.toLocaleString("en-IN")}
+      {hard || over ? ` / ${max.toLocaleString("en-IN")}` : max > 5000 ? " (no short limit)" : ""}
+      {over ? " — over limit, shorten before submit" : ""}
+    </p>
+  );
+}
 
 function CreatePostInner() {
   const params = useParams<{ companyId: string }>();
@@ -598,42 +640,86 @@ function CreatePostInner() {
               Copy base caption to all
             </button>
           </div>
-          {activeVariantPlatforms.map((code) => (
-            <div key={code} className="panel space-y-2 p-5">
-              <h3 className="flex items-center gap-2 font-display font-semibold">
-                <SocialPlatformIcon code={code} className="h-5 w-5" />
-                {code}
-              </h3>
-              {(code === "YOUTUBE" || code === "PINTEREST") && (
-                <input
-                  className="w-full rounded-xl border border-white/10 bg-ink-elevated px-3 py-2 text-sm"
-                  placeholder="Title"
-                  value={variants[code]?.title ?? ""}
-                  onChange={(e) =>
+          {activeVariantPlatforms.map((code) => {
+            const rule = rules[code];
+            const captionVal = variants[code]?.caption ?? "";
+            const titleVal = variants[code]?.title ?? "";
+            const descVal = variants[code]?.description ?? captionVal;
+            const captionHard = isHardCaptionLimit(rule?.captionMax);
+            const captionOver = Boolean(rule?.captionMax && captionVal.length > rule.captionMax);
+            const titleOver = Boolean(rule?.titleMax && titleVal.length > rule.titleMax);
+            const descOver = Boolean(rule?.descriptionMax && descVal.length > rule.descriptionMax);
+            return (
+              <div
+                key={code}
+                className={`panel space-y-2 p-5 ${
+                  captionOver || titleOver || descOver ? "ring-1 ring-brand-error/50" : ""
+                }`}
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <h3 className="flex items-center gap-2 font-display font-semibold">
+                    <SocialPlatformIcon code={code} className="h-5 w-5" />
+                    {code}
+                  </h3>
+                  {rule?.notes ? (
+                    <p className="text-[11px] text-content-muted">{rule.notes}</p>
+                  ) : null}
+                </div>
+                {(code === "YOUTUBE" || code === "PINTEREST") && (
+                  <>
+                    <input
+                      className={`w-full rounded-xl border bg-ink-elevated px-3 py-2 text-sm ${
+                        titleOver ? "border-brand-error" : "border-white/10"
+                      }`}
+                      placeholder={`Title${rule?.titleMax ? ` (max ${rule.titleMax})` : ""}`}
+                      value={titleVal}
+                      onChange={(e) =>
+                        setVariants((v) => ({
+                          ...v,
+                          [code]: { ...v[code], platformCode: code, title: e.target.value },
+                        }))
+                      }
+                    />
+                    <CharMeter label="Title" value={titleVal} max={rule?.titleMax} hard />
+                  </>
+                )}
+                <textarea
+                  className={`min-h-24 w-full rounded-xl border bg-ink-elevated px-3 py-2 text-sm ${
+                    captionOver ? "border-brand-error" : "border-white/10"
+                  }`}
+                  placeholder={
+                    captionHard && rule?.captionMax
+                      ? `Caption (max ${rule.captionMax})`
+                      : "Caption"
+                  }
+                  value={captionVal}
+                  onChange={(e) => {
+                    const next = e.target.value;
                     setVariants((v) => ({
                       ...v,
-                      [code]: { ...v[code], platformCode: code, title: e.target.value },
-                    }))
-                  }
+                      [code]: {
+                        ...v[code],
+                        platformCode: code,
+                        caption: next,
+                        // Keep pin/YouTube description aligned with caption unless separately edited later.
+                        description: next,
+                        hashtags: v[code]?.hashtags ?? "",
+                      },
+                    }));
+                  }}
                 />
-              )}
-              <textarea
-                className="min-h-24 w-full rounded-xl border border-white/10 bg-ink-elevated px-3 py-2 text-sm"
-                value={variants[code]?.caption ?? ""}
-                onChange={(e) =>
-                  setVariants((v) => ({
-                    ...v,
-                    [code]: {
-                      ...v[code],
-                      platformCode: code,
-                      caption: e.target.value,
-                      hashtags: v[code]?.hashtags ?? "",
-                    },
-                  }))
-                }
-              />
-            </div>
-          ))}
+                <CharMeter
+                  label="Caption"
+                  value={captionVal}
+                  max={rule?.captionMax}
+                  hard={captionHard}
+                />
+                {rule?.descriptionMax && (code === "YOUTUBE" || code === "PINTEREST") ? (
+                  <CharMeter label="Description" value={descVal} max={rule.descriptionMax} hard />
+                ) : null}
+              </div>
+            );
+          })}
           <button className="btn-primary" disabled={busy} onClick={runValidate}>
             Validate
           </button>
