@@ -7,6 +7,7 @@ import { AppShell } from "@/components/shell";
 import { SocialPlatformIcon, PLATFORM_BRAND_COLOR } from "@/components/social-platform-icon";
 import { toast } from "@/components/toast";
 import { apiFetch, getToken } from "@/lib/api";
+import { localDateTimeInputToIso } from "@/lib/datetime-local";
 import { companyNav } from "@/lib/nav";
 
 type Client = { id: string; name: string; logoUrl?: string | null };
@@ -222,7 +223,7 @@ function CreatePostInner() {
         baseHashtags: hashtags,
         callToAction: cta || null,
         linkUrl: linkUrl || null,
-        scheduledAt: scheduledAt || null,
+        scheduledAt: localDateTimeInputToIso(scheduledAt),
         variants: nextVariants,
         targets: selectedPlatforms.map((platformCode) => ({
           platformCode,
@@ -259,13 +260,14 @@ function CreatePostInner() {
     setError(null);
     try {
       await saveContentAndPlatforms();
+      const scheduleIso = localDateTimeInputToIso(scheduledAt) || undefined;
       const result = await apiFetch<{ post: Post; validation: Validation }>(
         `/posts/${current.id}/submit`,
         {
           method: "POST",
           body: JSON.stringify({
             action,
-            scheduledAt: scheduledAt || undefined,
+            scheduledAt: scheduleIso,
             skipApproval,
           }),
         },
@@ -288,13 +290,23 @@ function CreatePostInner() {
       }
       if (action === "PENDING_APPROVAL") {
         toast.success("Sent for approval", "Client will review in Approvals");
-      } else if (action === "SCHEDULED") {
+        router.push(`/app/${companyId}/posts`);
+        return;
+      }
+      if (action === "SCHEDULED") {
+        const when = result.post.scheduledAt
+          ? new Date(result.post.scheduledAt).toLocaleString()
+          : scheduleIso
+            ? new Date(scheduleIso).toLocaleString()
+            : "selected time";
         toast.success(
           skipApproval ? "Scheduled" : "Scheduled pending approval",
           skipApproval
-            ? "Will publish at the selected time"
-            : "Client must approve before publish",
+            ? `Will publish at ${when} (your local time)`
+            : `Client must approve before publish · ${when}`,
         );
+        router.push(`/app/${companyId}/posts`);
+        return;
       }
       setStep(6);
     } catch (err) {
@@ -761,7 +773,7 @@ function CreatePostInner() {
           <div className="rounded-2xl border border-white/10 bg-[var(--elevated)] p-4 space-y-3">
             <p className="text-sm font-semibold">Direct schedule / publish</p>
             <label className="block text-xs text-content-muted">
-              Schedule time
+              Schedule time (your local timezone)
               <input
                 type="datetime-local"
                 className="mt-1 w-full rounded-xl border border-white/10 bg-ink-elevated px-3 py-2 text-sm text-white"
@@ -769,6 +781,11 @@ function CreatePostInner() {
                 onChange={(e) => setScheduledAt(e.target.value)}
               />
             </label>
+            {scheduledAt ? (
+              <p className="text-[11px] text-content-muted">
+                Will send as {new Date(scheduledAt).toLocaleString()} · stored in UTC for publishing
+              </p>
+            ) : null}
             <div className="flex flex-col gap-2">
               <button
                 disabled={busy || !scheduledAt}
