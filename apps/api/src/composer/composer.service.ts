@@ -7,7 +7,9 @@ import {
 import { SocialPlatformCode } from "@prisma/client";
 import type { AuthUser } from "../auth/jwt.strategy";
 import { ApprovalsService } from "../approvals/approvals.service";
+import { decryptSecret } from "../common/crypto.util";
 import { PrismaService } from "../prisma/prisma.service";
+import { PublishingService } from "../publishing/publishing.service";
 import {
   CreateCampaignDto,
   CreatePostDto,
@@ -21,6 +23,7 @@ export class ComposerService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly approvals: ApprovalsService,
+    private readonly publishing: PublishingService,
   ) {}
 
   async createCampaign(companyId: string, clientId: string, user: AuthUser, dto: CreateCampaignDto) {
@@ -107,8 +110,11 @@ export class ComposerService {
   async updatePost(postId: string, user: AuthUser, dto: UpdatePostDto) {
     const existing = await this.getPost(postId, user);
     await this.assertCanManage(existing.companyId, user);
-    if (!["DRAFT", "REJECTED", "PENDING_APPROVAL", "APPROVED"].includes(existing.status)) {
-      throw new BadRequestException("Only draft/pending/rejected/approved posts can be edited");
+    const editable = ["DRAFT", "REJECTED", "PENDING_APPROVAL", "APPROVED", "SCHEDULED", "FAILED", "CANCELLED"];
+    if (!editable.includes(existing.status)) {
+      throw new BadRequestException(
+        "Published live posts can't be rewritten in-place — duplicate or delete & recreate. Draft/scheduled/failed posts can be edited.",
+      );
     }
 
     if (["PENDING_APPROVAL", "APPROVED"].includes(existing.status)) {
@@ -142,10 +148,25 @@ export class ComposerService {
           revision: { increment: 1 },
           status: ["PENDING_APPROVAL", "APPROVED"].includes(existing.status)
             ? "DRAFT"
-            : existing.status,
-          currentApprovalStep: null,
+            : existing.status === "SCHEDULED" && dto.baseCaption !== undefined
+              ? "SCHEDULED"
+              : existing.status,
+          currentApprovalStep: ["PENDING_APPROVAL", "APPROVED"].includes(existing.status)
+            ? null
+            : undefined,
         },
       });
+
+      // Keep platform variants aligned when editing base caption from Posts UI.
+      if (dto.baseCaption !== undefined && !dto.variants?.length) {
+        await tx.postVariant.updateMany({
+          where: { postId },
+          data: {
+            caption: dto.baseCaption,
+            ...(dto.baseHashtags !== undefined ? { hashtags: dto.baseHashtags } : {}),
+          },
+        });
+      }
 
       if (dto.variants) {
         for (const variant of dto.variants) {
@@ -434,7 +455,9 @@ export class ComposerService {
           metadata: { validationOk: validation.ok, skipApproval: true },
         },
       });
-      return { post: updated, validation };
+      // Ensure the publishing worker will fire at scheduledAt.
+      await this.publishing.enqueuePost(postId, user, { immediate: false });
+      return { post: await this.getPost(postId, user), validation };
     }
 
     const updated = await this.prisma.contentPost.update({
@@ -459,6 +482,157 @@ export class ComposerService {
     });
 
     return { post: updated, validation };
+  }
+
+  async reschedulePost(postId: string, user: AuthUser, scheduledAtIso: string) {
+    const post = await this.getPost(postId, user);
+    await this.assertCanManage(post.companyId, user);
+    const scheduledAt = new Date(scheduledAtIso);
+    if (Number.isNaN(scheduledAt.getTime())) {
+      throw new BadRequestException("Invalid schedule time");
+    }
+    if (scheduledAt.getTime() < Date.now() - 30_000) {
+      throw new BadRequestException("Schedule time must be in the future");
+    }
+    if (["PUBLISHED", "PUBLISHING", "CANCELLED"].includes(post.status)) {
+      throw new BadRequestException("Cannot reschedule a live/cancelled post — duplicate it instead");
+    }
+
+    await this.prisma.contentPost.update({
+      where: { id: postId },
+      data: {
+        scheduledAt,
+        status: post.status === "DRAFT" || post.status === "FAILED" ? "SCHEDULED" : post.status === "APPROVED" ? "SCHEDULED" : post.status,
+      },
+    });
+    await this.prisma.postTarget.updateMany({
+      where: { postId, status: { not: "PUBLISHED" } },
+      data: { scheduledAt, status: "SCHEDULED" },
+    });
+    await this.prisma.publishingJob.updateMany({
+      where: {
+        postId,
+        status: { in: ["QUEUED", "SCHEDULED", "RETRY_PENDING"] },
+      },
+      data: {
+        scheduledAt,
+        status: "SCHEDULED",
+        nextAttemptAt: scheduledAt,
+      },
+    });
+
+    // Ensure jobs exist for the new time.
+    await this.publishing.enqueuePost(postId, user, { immediate: false });
+
+    await this.prisma.auditLog.create({
+      data: {
+        actorId: user.id,
+        companyId: post.companyId,
+        action: "POST_RESCHEDULED",
+        entityType: "ContentPost",
+        entityId: postId,
+        metadata: { scheduledAt: scheduledAt.toISOString() },
+      },
+    });
+
+    return this.getPost(postId, user);
+  }
+
+  async deletePost(postId: string, user: AuthUser) {
+    const post = await this.getPost(postId, user);
+    await this.assertCanManage(post.companyId, user);
+
+    await this.prisma.publishingJob.updateMany({
+      where: {
+        postId,
+        status: { in: ["QUEUED", "SCHEDULED", "RETRY_PENDING", "PUBLISHING"] },
+      },
+      data: { status: "CANCELLED", lastError: "Cancelled — post deleted from SR Social Hub" },
+    });
+
+    const remoteResults: Array<{ platform: string; ok: boolean; detail: string }> = [];
+    for (const target of post.targets) {
+      if (!target.externalPostId || !target.socialAccountId) {
+        if (target.status === "PUBLISHED") {
+          remoteResults.push({
+            platform: target.platformCode,
+            ok: false,
+            detail: "Published remotely but no external id — delete manually on that network if needed",
+          });
+        }
+        continue;
+      }
+      const account = await this.prisma.socialAccount.findUnique({
+        where: { id: target.socialAccountId },
+        include: { token: true },
+      });
+      if (!account?.token?.accessTokenEncrypted) {
+        remoteResults.push({
+          platform: target.platformCode,
+          ok: false,
+          detail: "Missing account token — remove manually on the network",
+        });
+        continue;
+      }
+      let token = "";
+      try {
+        token = decryptSecret(account.token.accessTokenEncrypted);
+      } catch {
+        remoteResults.push({ platform: target.platformCode, ok: false, detail: "Token decrypt failed" });
+        continue;
+      }
+      if (token.startsWith("mock_") || account.connectionMode === "mock") {
+        remoteResults.push({ platform: target.platformCode, ok: true, detail: "Mock publish — nothing remote to delete" });
+        continue;
+      }
+
+      const meta = ["FACEBOOK", "INSTAGRAM", "THREADS"].includes(target.platformCode);
+      if (meta) {
+        try {
+          const version = process.env.FACEBOOK_GRAPH_VERSION || "v21.0";
+          const res = await fetch(
+            `https://graph.facebook.com/${version}/${encodeURIComponent(target.externalPostId)}?access_token=${encodeURIComponent(token)}`,
+            { method: "DELETE" },
+          );
+          const json = (await res.json().catch(() => ({}))) as { success?: boolean; error?: { message?: string } };
+          if (res.ok && (json.success === true || !json.error)) {
+            remoteResults.push({ platform: target.platformCode, ok: true, detail: "Deleted on network" });
+          } else {
+            remoteResults.push({
+              platform: target.platformCode,
+              ok: false,
+              detail: json.error?.message || `Remote delete failed (HTTP ${res.status}) — remove manually if still live`,
+            });
+          }
+        } catch (e) {
+          remoteResults.push({
+            platform: target.platformCode,
+            ok: false,
+            detail: e instanceof Error ? e.message : "Remote delete failed",
+          });
+        }
+      } else {
+        remoteResults.push({
+          platform: target.platformCode,
+          ok: false,
+          detail: "Auto-delete not supported for this network — removed from SR; delete manually on the platform if already live",
+        });
+      }
+    }
+
+    await this.prisma.auditLog.create({
+      data: {
+        actorId: user.id,
+        companyId: post.companyId,
+        action: "POST_DELETED",
+        entityType: "ContentPost",
+        entityId: postId,
+        metadata: { remoteResults },
+      },
+    });
+
+    await this.prisma.contentPost.delete({ where: { id: postId } });
+    return { ok: true, remoteResults };
   }
 
   async duplicate(postId: string, user: AuthUser) {

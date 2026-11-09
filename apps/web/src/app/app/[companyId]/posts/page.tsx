@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { AppShell } from "@/components/shell";
 import { AuthImage } from "@/components/auth-image";
@@ -8,6 +8,7 @@ import { SocialPlatformIcon } from "@/components/social-platform-icon";
 import { StatusBadge } from "@/components/status-badge";
 import { toast } from "@/components/toast";
 import { apiFetch, getToken } from "@/lib/api";
+import { isoToLocalDateTimeInput, localDateTimeInputToIso } from "@/lib/datetime-local";
 import { companyNav } from "@/lib/nav";
 
 type Post = {
@@ -20,6 +21,12 @@ type Post = {
   createdAt?: string;
   client: { id: string; name: string };
   mediaAsset?: { id: string; kind: string; originalName?: string } | null;
+  variants?: Array<{
+    platformCode: string;
+    caption: string;
+    title?: string | null;
+    hashtags?: string | null;
+  }>;
   targets: Array<{
     platformCode: string;
     status?: string;
@@ -35,6 +42,14 @@ function formatWhen(value?: string | null) {
   return new Date(value).toLocaleString();
 }
 
+function previewAspect(platform: string) {
+  const p = platform.toUpperCase();
+  if (p === "PINTEREST") return "aspect-[2/3]";
+  if (p === "YOUTUBE") return "aspect-video";
+  if (p === "LINKEDIN" || p === "FACEBOOK" || p === "X") return "aspect-[1.91/1]";
+  return "aspect-square";
+}
+
 function inRange(iso: string | null | undefined, from: string, to: string) {
   if (!from && !to) return true;
   const t = iso ? new Date(iso).getTime() : NaN;
@@ -48,18 +63,35 @@ function inRange(iso: string | null | undefined, from: string, to: string) {
   return true;
 }
 
+function platformsFor(p: Post) {
+  if (p.variants?.length) return p.variants;
+  return p.targets.map((t) => ({
+    platformCode: t.platformCode,
+    caption: p.baseCaption,
+    title: null as string | null,
+    hashtags: p.baseHashtags ?? null,
+  }));
+}
+
 export default function PostsPage() {
   const params = useParams<{ companyId: string }>();
   const router = useRouter();
   const companyId = params.companyId;
   const [posts, setPosts] = useState<Post[]>([]);
   const [clientFilter, setClientFilter] = useState("ALL");
-  const [view, setView] = useState<"list" | "grid">("list");
+  const [view, setView] = useState<"list" | "grid">("grid");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
-  const [openId, setOpenId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+
+  const [previewPost, setPreviewPost] = useState<Post | null>(null);
+  const [previewPlatform, setPreviewPlatform] = useState<string>("");
+  const [editPost, setEditPost] = useState<Post | null>(null);
+  const [editCaption, setEditCaption] = useState("");
+  const [editHashtags, setEditHashtags] = useState("");
+  const [schedulePost, setSchedulePost] = useState<Post | null>(null);
+  const [scheduleLocal, setScheduleLocal] = useState("");
 
   async function load() {
     setPosts(await apiFetch<Post[]>(`/companies/${companyId}/posts`));
@@ -88,6 +120,23 @@ export default function PostsPage() {
     });
   }, [posts, clientFilter, from, to]);
 
+  function openPreview(p: Post) {
+    const plats = platformsFor(p);
+    setPreviewPost(p);
+    setPreviewPlatform(plats[0]?.platformCode || p.targets[0]?.platformCode || "");
+  }
+
+  function openEdit(p: Post) {
+    setEditPost(p);
+    setEditCaption(p.baseCaption || "");
+    setEditHashtags(p.baseHashtags || "");
+  }
+
+  function openSchedule(p: Post) {
+    setSchedulePost(p);
+    setScheduleLocal(isoToLocalDateTimeInput(p.scheduledAt));
+  }
+
   async function publishNow(postId: string) {
     setBusy(postId);
     setError(null);
@@ -104,6 +153,83 @@ export default function PostsPage() {
       setBusy(null);
     }
   }
+
+  async function saveEdit(e: FormEvent) {
+    e.preventDefault();
+    if (!editPost) return;
+    setBusy(editPost.id);
+    try {
+      await apiFetch(`/posts/${editPost.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          baseCaption: editCaption,
+          baseHashtags: editHashtags,
+        }),
+      });
+      toast.success("Post updated", "Caption saved across platform variants");
+      setEditPost(null);
+      await load();
+    } catch (err) {
+      toast.error("Edit failed", err instanceof Error ? err.message : "Error");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function saveSchedule(e: FormEvent) {
+    e.preventDefault();
+    if (!schedulePost) return;
+    const iso = localDateTimeInputToIso(scheduleLocal);
+    if (!iso) {
+      toast.error("Pick a schedule time");
+      return;
+    }
+    setBusy(schedulePost.id);
+    try {
+      const updated = await apiFetch<Post>(`/posts/${schedulePost.id}/reschedule`, {
+        method: "POST",
+        body: JSON.stringify({ scheduledAt: iso }),
+      });
+      toast.success(
+        "Rescheduled",
+        `Will publish at ${new Date(updated.scheduledAt || iso).toLocaleString()}`,
+      );
+      setSchedulePost(null);
+      await load();
+    } catch (err) {
+      toast.error("Reschedule failed", err instanceof Error ? err.message : "Error");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function deletePost(p: Post) {
+    const ok = window.confirm(
+      `Delete this post for ${p.client.name}?\n\nThis removes it from SR Social Hub, cancels queued jobs, and tries to delete live Meta posts when possible. Other networks may need a manual delete.`,
+    );
+    if (!ok) return;
+    setBusy(p.id);
+    try {
+      const res = await apiFetch<{
+        ok: boolean;
+        remoteResults?: Array<{ platform: string; ok: boolean; detail: string }>;
+      }>(`/posts/${p.id}`, { method: "DELETE" });
+      const remoteNote = (res.remoteResults || [])
+        .map((r) => `${r.platform}: ${r.ok ? "ok" : r.detail}`)
+        .join(" · ");
+      toast.success("Post deleted", remoteNote || "Removed from workspace");
+      if (previewPost?.id === p.id) setPreviewPost(null);
+      await load();
+    } catch (err) {
+      toast.error("Delete failed", err instanceof Error ? err.message : "Error");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  const previewPlatforms = previewPost ? platformsFor(previewPost) : [];
+  const activePreview =
+    previewPlatforms.find((v) => v.platformCode === previewPlatform) || previewPlatforms[0];
 
   return (
     <AppShell title="Posts" subtitle="Client-wise publishing history" nav={companyNav(companyId)}>
@@ -167,15 +293,10 @@ export default function PostsPage() {
       </div>
 
       <div className={view === "grid" ? "grid gap-3 sm:grid-cols-2 xl:grid-cols-3" : "space-y-3"}>
-        {visible.map((p) => {
-          const open = openId === p.id;
-          return (
-            <article key={p.id} className="panel overflow-hidden p-0">
-              <button
-                type="button"
-                className={`flex w-full gap-3 p-4 text-left ${view === "grid" ? "flex-col" : "items-start"}`}
-                onClick={() => setOpenId(open ? null : p.id)}
-              >
+        {visible.map((p) => (
+          <article key={p.id} className="panel overflow-hidden p-0">
+            <div className={`flex gap-3 p-4 ${view === "grid" ? "flex-col" : "items-start"}`}>
+              <button type="button" className="block w-full text-left" onClick={() => openPreview(p)}>
                 <div
                   className={`shrink-0 overflow-hidden rounded-xl border border-white/10 bg-black/30 ${
                     view === "grid" ? "w-full" : "w-24"
@@ -193,78 +314,21 @@ export default function PostsPage() {
                     </div>
                   )}
                 </div>
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-start justify-between gap-2">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-brand-primary">
-                      {p.client.name}
-                    </p>
-                    <StatusBadge status={p.status} />
-                  </div>
-                  <p className="mt-1 line-clamp-3 text-sm font-medium">{p.baseCaption || "—"}</p>
-                  <p className="mt-2 text-xs text-content-muted">
-                    Updated {formatWhen(p.updatedAt)}
-                    {p.scheduledAt ? ` · Scheduled ${formatWhen(p.scheduledAt)}` : ""}
-                  </p>
-                </div>
               </button>
-
-              {open ? (
-                <div className="space-y-3 border-t border-[var(--border)] p-4 text-sm">
-                  {p.mediaAsset?.kind === "IMAGE" ? (
-                    <div className="mx-auto max-w-sm overflow-hidden rounded-xl border border-white/10 bg-black/40">
-                      <AuthImage
-                        assetId={p.mediaAsset.id}
-                        alt={p.mediaAsset.originalName ?? "Post"}
-                        className="aspect-square w-full object-contain"
-                      />
-                    </div>
-                  ) : null}
-                  {p.baseHashtags ? (
-                    <p className="text-xs text-brand-primary">{p.baseHashtags}</p>
-                  ) : null}
-                  <p className="text-[11px] font-semibold uppercase tracking-wide text-content-muted">
-                    Networks & status
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-brand-primary">
+                    {p.client.name}
                   </p>
-                  {p.targets.length ? (
-                    p.targets.map((t) => (
-                      <div
-                        key={`${p.id}-${t.platformCode}-${t.externalPostId ?? t.status}`}
-                        className="flex flex-wrap items-center gap-2"
-                      >
-                        <SocialPlatformIcon code={t.platformCode} className="h-5 w-5" />
-                        <span className="font-medium">{t.platformCode}</span>
-                        <StatusBadge status={t.status ?? "DRAFT"} />
-                        <span className="text-xs text-content-muted">
-                          {t.publishedAt
-                            ? `Published ${formatWhen(t.publishedAt)}`
-                            : t.scheduledAt
-                              ? `Scheduled ${formatWhen(t.scheduledAt)}`
-                              : "—"}
-                        </span>
-                        {t.lastError ? (
-                          <span className="w-full text-xs text-brand-error">{t.lastError}</span>
-                        ) : null}
-                      </div>
-                    ))
-                  ) : (
-                    <p className="text-xs text-content-muted">No targets</p>
-                  )}
-                  <p className="flex flex-wrap items-center gap-2 text-xs text-content-muted">
-                    Approval / workflow status: <StatusBadge status={p.status} />
-                  </p>
-                  {["APPROVED", "FAILED", "SCHEDULED"].includes(p.status) ? (
-                    <button
-                      className="rounded-lg bg-brand-primary px-3 py-1.5 text-xs font-semibold text-[#050814] disabled:opacity-50"
-                      disabled={busy === p.id}
-                      onClick={() => publishNow(p.id)}
-                    >
-                      {busy === p.id ? "Queuing…" : "Publish now"}
-                    </button>
-                  ) : null}
+                  <StatusBadge status={p.status} />
                 </div>
-              ) : (
-                <div className="flex flex-wrap gap-1 px-4 pb-4">
-                  {p.targets.slice(0, 6).map((t) => (
+                <p className="mt-1 line-clamp-3 text-sm font-medium">{p.baseCaption || "—"}</p>
+                <p className="mt-2 text-xs text-content-muted">
+                  Updated {formatWhen(p.updatedAt)}
+                  {p.scheduledAt ? ` · Scheduled ${formatWhen(p.scheduledAt)}` : ""}
+                </p>
+                <div className="mt-2 flex flex-wrap gap-1">
+                  {p.targets.slice(0, 8).map((t) => (
                     <SocialPlatformIcon
                       key={`${p.id}-${t.platformCode}`}
                       code={t.platformCode}
@@ -272,16 +336,218 @@ export default function PostsPage() {
                     />
                   ))}
                 </div>
-              )}
-            </article>
-          );
-        })}
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    className="rounded-lg border border-white/15 px-2.5 py-1 text-[11px] font-semibold"
+                    onClick={() => openPreview(p)}
+                  >
+                    Preview
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded-lg border border-white/15 px-2.5 py-1 text-[11px] font-semibold"
+                    onClick={() => openEdit(p)}
+                    disabled={busy === p.id || p.status === "PUBLISHED" || p.status === "PUBLISHING"}
+                  >
+                    Edit
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded-lg border border-white/15 px-2.5 py-1 text-[11px] font-semibold"
+                    onClick={() => openSchedule(p)}
+                    disabled={busy === p.id || p.status === "PUBLISHED" || p.status === "PUBLISHING"}
+                  >
+                    Schedule
+                  </button>
+                  {["APPROVED", "FAILED", "SCHEDULED"].includes(p.status) ? (
+                    <button
+                      type="button"
+                      className="rounded-lg bg-brand-primary px-2.5 py-1 text-[11px] font-semibold text-[#050814] disabled:opacity-50"
+                      disabled={busy === p.id}
+                      onClick={() => publishNow(p.id)}
+                    >
+                      {busy === p.id ? "…" : "Publish now"}
+                    </button>
+                  ) : null}
+                  <button
+                    type="button"
+                    className="rounded-lg border border-brand-error/40 px-2.5 py-1 text-[11px] font-semibold text-brand-error"
+                    disabled={busy === p.id}
+                    onClick={() => deletePost(p)}
+                  >
+                    Delete
+                  </button>
+                </div>
+              </div>
+            </div>
+          </article>
+        ))}
         {!visible.length ? (
           <div className="panel p-6 text-sm text-content-muted sm:col-span-full">
             No posts for this filter / date range.
           </div>
         ) : null}
       </div>
+
+      {previewPost && activePreview ? (
+        <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
+          <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl border border-white/15 bg-[#0B1220] p-5 shadow-2xl">
+            <div className="mb-4 flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs uppercase tracking-[0.16em] text-content-muted">Preview</p>
+                <h3 className="font-display text-lg font-semibold">{previewPost.client.name}</h3>
+              </div>
+              <button
+                type="button"
+                className="rounded-lg border border-white/15 px-2 py-1 text-xs"
+                onClick={() => setPreviewPost(null)}
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="mb-4 flex flex-wrap gap-2">
+              {previewPlatforms.map((v) => (
+                <button
+                  key={v.platformCode}
+                  type="button"
+                  onClick={() => setPreviewPlatform(v.platformCode)}
+                  className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] ${
+                    previewPlatform === v.platformCode
+                      ? "border-brand-primary bg-brand-primary/20 text-white"
+                      : "border-white/15 text-content-muted"
+                  }`}
+                >
+                  <SocialPlatformIcon code={v.platformCode} className="h-3.5 w-3.5" />
+                  {v.platformCode}
+                </button>
+              ))}
+            </div>
+
+            <div className="rounded-2xl border border-white/10 bg-[var(--elevated)] p-4">
+              <div className="mb-3 flex items-center gap-2">
+                <SocialPlatformIcon code={activePreview.platformCode} className="h-5 w-5" />
+                <span className="text-sm font-semibold">{activePreview.platformCode}</span>
+              </div>
+              {previewPost.mediaAsset?.kind === "IMAGE" ? (
+                <div className="mb-3 overflow-hidden rounded-xl border border-white/10 bg-black/40">
+                  <AuthImage
+                    assetId={previewPost.mediaAsset.id}
+                    alt=""
+                    className={`w-full object-contain ${previewAspect(activePreview.platformCode)}`}
+                  />
+                </div>
+              ) : null}
+              {activePreview.title ? (
+                <p className="mb-1 text-sm font-semibold">{activePreview.title}</p>
+              ) : null}
+              <p className="whitespace-pre-wrap text-sm leading-6">
+                {activePreview.caption || previewPost.baseCaption}
+              </p>
+              {activePreview.hashtags || previewPost.baseHashtags ? (
+                <p className="mt-2 text-xs text-brand-primary">
+                  {activePreview.hashtags || previewPost.baseHashtags}
+                </p>
+              ) : null}
+            </div>
+
+            <p className="mt-3 text-[11px] text-content-muted">
+              Tap a network below the title to switch previews for every selected platform.
+            </p>
+          </div>
+        </div>
+      ) : null}
+
+      {editPost ? (
+        <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
+          <form
+            onSubmit={saveEdit}
+            className="w-full max-w-lg space-y-3 rounded-2xl border border-white/15 bg-[#0B1220] p-5 shadow-2xl"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs uppercase tracking-[0.16em] text-content-muted">Edit post</p>
+                <h3 className="font-display text-lg font-semibold">{editPost.client.name}</h3>
+              </div>
+              <button type="button" className="rounded-lg border border-white/15 px-2 py-1 text-xs" onClick={() => setEditPost(null)}>
+                Close
+              </button>
+            </div>
+            <textarea
+              className="min-h-32 w-full rounded-xl border border-white/10 bg-ink-elevated px-3 py-2 text-sm"
+              value={editCaption}
+              onChange={(e) => setEditCaption(e.target.value)}
+              placeholder="Caption"
+              required
+            />
+            <input
+              className="w-full rounded-xl border border-white/10 bg-ink-elevated px-3 py-2 text-sm"
+              value={editHashtags}
+              onChange={(e) => setEditHashtags(e.target.value)}
+              placeholder="Hashtags"
+            />
+            <div className="flex gap-2">
+              <button
+                type="submit"
+                disabled={busy === editPost.id}
+                className="rounded-xl bg-brand-primary px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+              >
+                {busy === editPost.id ? "Saving…" : "Save changes"}
+              </button>
+              <button type="button" className="rounded-xl border border-white/15 px-4 py-2 text-sm" onClick={() => setEditPost(null)}>
+                Cancel
+              </button>
+            </div>
+          </form>
+        </div>
+      ) : null}
+
+      {schedulePost ? (
+        <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
+          <form
+            onSubmit={saveSchedule}
+            className="w-full max-w-md space-y-3 rounded-2xl border border-white/15 bg-[#0B1220] p-5 shadow-2xl"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs uppercase tracking-[0.16em] text-content-muted">Change schedule</p>
+                <h3 className="font-display text-lg font-semibold">{schedulePost.client.name}</h3>
+              </div>
+              <button type="button" className="rounded-lg border border-white/15 px-2 py-1 text-xs" onClick={() => setSchedulePost(null)}>
+                Close
+              </button>
+            </div>
+            <label className="block text-xs text-content-muted">
+              Publish at (your local time)
+              <input
+                type="datetime-local"
+                className="mt-1 w-full rounded-xl border border-white/10 bg-ink-elevated px-3 py-2 text-sm text-white"
+                value={scheduleLocal}
+                onChange={(e) => setScheduleLocal(e.target.value)}
+                required
+              />
+            </label>
+            {scheduleLocal ? (
+              <p className="text-[11px] text-content-muted">
+                Will publish around {new Date(scheduleLocal).toLocaleString()}
+              </p>
+            ) : null}
+            <div className="flex gap-2">
+              <button
+                type="submit"
+                disabled={busy === schedulePost.id}
+                className="rounded-xl bg-brand-primary px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+              >
+                {busy === schedulePost.id ? "Saving…" : "Update schedule"}
+              </button>
+              <button type="button" className="rounded-xl border border-white/15 px-4 py-2 text-sm" onClick={() => setSchedulePost(null)}>
+                Cancel
+              </button>
+            </div>
+          </form>
+        </div>
+      ) : null}
     </AppShell>
   );
 }

@@ -1,5 +1,6 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
+import { IsDateString } from "class-validator";
 import { SocialPlatformCode } from "@prisma/client";
 import type { AuthUser } from "../auth/jwt.strategy";
 import { CurrentUser } from "../common/decorators/current-user.decorator";
@@ -12,6 +13,11 @@ import {
   SubmitPostDto,
   UpdatePostDto,
 } from "./dto/composer.dto";
+
+class RescheduleDto {
+  @IsDateString()
+  scheduledAt!: string;
+}
 
 @ApiTags("composer")
 @ApiBearerAuth()
@@ -91,6 +97,22 @@ export class ComposerController {
   @Post("posts/:postId/duplicate")
   duplicate(@Param("postId") postId: string, @CurrentUser() user: AuthUser) {
     return this.composer.duplicate(postId, user);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post("posts/:postId/reschedule")
+  reschedule(
+    @Param("postId") postId: string,
+    @CurrentUser() user: AuthUser,
+    @Body() dto: RescheduleDto,
+  ) {
+    return this.composer.reschedulePost(postId, user, dto.scheduledAt);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Delete("posts/:postId")
+  remove(@Param("postId") postId: string, @CurrentUser() user: AuthUser) {
+    return this.composer.deletePost(postId, user);
   }
 
   @UseGuards(JwtAuthGuard, CompanyAccessGuard)
