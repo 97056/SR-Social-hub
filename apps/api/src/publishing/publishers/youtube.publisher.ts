@@ -283,7 +283,7 @@ export class YouTubePublisher implements PlatformPublisher {
         Origin: "https://www.youtube.com",
         Referer: `https://www.youtube.com/channel/${input.channelId}/posts`,
       },
-      body: input.bytes,
+      body: new Uint8Array(input.bytes),
     });
     const putText = await putRes.text();
     if (!putRes.ok) {
