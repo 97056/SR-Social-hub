@@ -50,8 +50,8 @@ export const PLATFORM_RULES: Record<SocialPlatformCode, PlatformRule> = {
     requiresTitle: true,
     supportsHashtags: true,
     supportsLink: true,
-    videoRequired: true,
-    notes: "Title max 100 · description max 5,000. Requires a video file (images cannot post to YouTube).",
+    notes:
+      "Title max 100 · description max 5,000. Video → channel upload. Image/text → Community (Posts) tab.",
   },
   // Kept for Prisma enum compatibility; product UI/API exclude TikTok.
   TIKTOK: {

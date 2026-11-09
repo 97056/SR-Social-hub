@@ -113,16 +113,19 @@ export const PLATFORM_CATALOG: PlatformCatalogEntry[] = [
     mockPrefix: "yt",
     accountLabel: "YouTube Channel",
     scopes: [
+      "https://www.googleapis.com/auth/youtube",
+      "https://www.googleapis.com/auth/youtube.force-ssl",
       "https://www.googleapis.com/auth/youtube.upload",
       "https://www.googleapis.com/auth/youtube.readonly",
     ],
     capabilities: {
-      publishText: false,
-      publishImage: false,
+      publishText: true,
+      publishImage: true,
       publishVideo: true,
       schedule: true,
       assistedOnly: false,
-      notes: "Live YouTube video upload via Data API. Attach a video on the post.",
+      notes:
+        "Video → Data API upload. Image or text → YouTube Community (Posts). Reconnect YouTube after scope updates.",
     },
     liveAuthorizeUrl: ({ clientId, redirectUri, scopes, state }) => {
       const q = new URLSearchParams({
