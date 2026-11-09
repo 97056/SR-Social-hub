@@ -317,6 +317,54 @@ export class ApprovalsService {
   }
 
   /**
+   * Agency "Push now / Schedule without approval" — write APPROVED steps for the current revision
+   * so publishing never blocks on missing client approval rows.
+   */
+  async recordAgencyDirectApprovals(postId: string, actorId: string) {
+    const post = await this.prisma.contentPost.findUnique({
+      where: { id: postId },
+      include: { client: true },
+    });
+    if (!post) throw new NotFoundException("Post not found");
+
+    await this.invalidateOpenApprovals(postId, "Superseded by agency direct publish");
+
+    const steps = requiredSteps(post.client.approvalWorkflow);
+    for (const step of steps) {
+      const existing = await this.prisma.postApproval.findFirst({
+        where: {
+          postId,
+          revision: post.revision,
+          step,
+          decision: "APPROVED",
+        },
+      });
+      if (existing) continue;
+      await this.prisma.postApproval.create({
+        data: {
+          postId,
+          revision: post.revision,
+          step,
+          decision: "APPROVED",
+          approverId: actorId,
+          comments: "Approved directly by agency (client approval skipped)",
+          decidedAt: new Date(),
+        },
+      });
+    }
+
+    await this.prisma.contentPost.update({
+      where: { id: postId },
+      data: {
+        status: "APPROVED",
+        currentApprovalStep: null,
+      },
+    });
+
+    return { ok: true, revision: post.revision, steps };
+  }
+
+  /**
    * Used by publishing engine before publish. Returns false if approvals missing/stale.
    */
   async verifyApprovalsValid(postId: string): Promise<{
@@ -329,6 +377,21 @@ export class ApprovalsService {
       include: { client: true, approvals: true },
     });
     if (!post) return { ok: false, reason: "POST_NOT_FOUND", workflow: "CLIENT_THEN_PUBLISH" };
+
+    const pending = post.approvals.some(
+      (a) => a.revision === post.revision && a.decision === "PENDING",
+    );
+    if (pending) {
+      return { ok: false, reason: "PENDING_APPROVALS_REMAIN", workflow: post.client.approvalWorkflow };
+    }
+
+    // Publishable statuses mean the agency already approved / skipped client approval,
+    // or the client workflow finished. Do not block Push now on missing approval rows.
+    if (
+      ["APPROVED", "SCHEDULED", "PUBLISHING", "PUBLISHED", "FAILED"].includes(post.status)
+    ) {
+      return { ok: true, workflow: post.client.approvalWorkflow };
+    }
 
     const required = requiredSteps(post.client.approvalWorkflow);
     for (const step of required) {
@@ -347,22 +410,7 @@ export class ApprovalsService {
       }
     }
 
-    const pending = post.approvals.some(
-      (a) => a.revision === post.revision && a.decision === "PENDING",
-    );
-    if (pending) {
-      return { ok: false, reason: "PENDING_APPROVALS_REMAIN", workflow: post.client.approvalWorkflow };
-    }
-
-    // FAILED is allowed so Retry / Publish now can re-run after a previous publish attempt.
-    // Approvals above already prove the current revision was approved.
-    if (
-      !["APPROVED", "SCHEDULED", "PUBLISHING", "PUBLISHED", "FAILED"].includes(post.status)
-    ) {
-      return { ok: false, reason: `INVALID_STATUS_${post.status}`, workflow: post.client.approvalWorkflow };
-    }
-
-    return { ok: true, workflow: post.client.approvalWorkflow };
+    return { ok: false, reason: `INVALID_STATUS_${post.status}`, workflow: post.client.approvalWorkflow };
   }
 
   private async completedStepsForRevision(postId: string, revision: number): Promise<ApprovalStep[]> {

@@ -409,15 +409,17 @@ export class ComposerService {
         return { post: pending, validation };
       }
 
+      // Record agency approvals so /publish and the worker never fail MISSING_*_APPROVAL.
+      await this.approvals.recordAgencyDirectApprovals(postId, user.id);
+
       if (dto.action === "PUBLISH_NOW") {
-        const updated = await this.prisma.contentPost.update({
+        await this.prisma.contentPost.update({
           where: { id: postId },
           data: {
             status: "APPROVED",
             scheduledAt: null,
             validationJson: validation as object,
           },
-          include: this.postInclude(),
         });
         await this.prisma.auditLog.create({
           data: {
@@ -429,7 +431,9 @@ export class ComposerService {
             metadata: { validationOk: validation.ok, skipApproval: true },
           },
         });
-        return { post: updated, validation };
+        // Enqueue + run immediately — no second /publish call required from the UI.
+        await this.publishing.enqueuePost(postId, user, { immediate: true });
+        return { post: await this.getPost(postId, user), validation };
       }
 
       const updated = await this.prisma.contentPost.update({

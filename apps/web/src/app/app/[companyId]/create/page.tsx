@@ -275,18 +275,9 @@ function CreatePostInner() {
       setPost(result.post);
       setValidation(result.validation);
       if (action === "PUBLISH_NOW" && skipApproval) {
-        try {
-          await apiFetch(`/posts/${result.post.id}/publish`, { method: "POST", body: "{}" });
-          await apiFetch("/publishing/worker/tick", { method: "POST" });
-          toast.success("Publishing", "Queued to all selected networks");
-          router.push(`/app/${companyId}/publishing`);
-          return;
-        } catch (err) {
-          toast.error(
-            "Queued for approval path",
-            err instanceof Error ? err.message : "Open Publishing queue to retry",
-          );
-        }
+        toast.success("Publishing", "Pushed to all selected networks — no client approval needed");
+        router.push(`/app/${companyId}/publishing`);
+        return;
       }
       if (action === "PENDING_APPROVAL") {
         toast.success("Sent for approval", "Client will review in Approvals");
