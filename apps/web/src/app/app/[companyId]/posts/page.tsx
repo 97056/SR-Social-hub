@@ -2,6 +2,8 @@
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
+import Swal from "sweetalert2";
+import "sweetalert2/dist/sweetalert2.min.css";
 import { AppShell } from "@/components/shell";
 import { AuthImage } from "@/components/auth-image";
 import { SocialPlatformIcon } from "@/components/social-platform-icon";
@@ -10,6 +12,18 @@ import { toast } from "@/components/toast";
 import { apiFetch, getToken } from "@/lib/api";
 import { isoToLocalDateTimeInput, localDateTimeInputToIso } from "@/lib/datetime-local";
 import { companyNav } from "@/lib/nav";
+
+const swalDark = Swal.mixin({
+  background: "#0B1220",
+  color: "#E8EEF9",
+  confirmButtonColor: "#E11D48",
+  cancelButtonColor: "#334155",
+  customClass: {
+    popup: "rounded-2xl border border-white/10 shadow-2xl",
+    confirmButton: "rounded-xl px-4 py-2 font-semibold",
+    cancelButton: "rounded-xl px-4 py-2 font-semibold",
+  },
+});
 
 type Post = {
   id: string;
@@ -204,24 +218,95 @@ export default function PostsPage() {
   }
 
   async function deletePost(p: Post) {
-    const ok = window.confirm(
-      `Delete this post for ${p.client.name}?\n\nThis removes it from SR Social Hub, cancels queued jobs, and tries to delete live Meta posts when possible. Other networks may need a manual delete.`,
+    const platforms = Array.from(
+      new Set(p.targets.map((t) => t.platformCode).filter(Boolean)),
     );
-    if (!ok) return;
+    const platformList =
+      platforms.length > 0
+        ? platforms.map((code) => `<li><strong>${code}</strong></li>`).join("")
+        : "<li><em>No connected targets</em></li>";
+
+    const confirm = await swalDark.fire({
+      icon: "warning",
+      title: "Delete this post?",
+      html: `
+        <p style="margin:0 0 12px;text-align:left;font-size:14px;line-height:1.5;opacity:.92">
+          Remove from <strong>SR Social Hub</strong> and delete on
+          <strong>all linked social media</strong> for
+          <strong>${p.client.name}</strong> where supported.
+        </p>
+        <p style="margin:0 0 6px;text-align:left;font-size:12px;text-transform:uppercase;letter-spacing:.12em;opacity:.65">
+          Networks
+        </p>
+        <ul style="margin:0;padding-left:18px;text-align:left;font-size:14px;line-height:1.7">
+          ${platformList}
+        </ul>
+        <p style="margin:14px 0 0;text-align:left;font-size:12px;opacity:.7;line-height:1.45">
+          Queued jobs are cancelled. Live Meta posts are removed when possible;
+          other networks may need a manual delete if already published.
+        </p>
+      `,
+      showCancelButton: true,
+      focusCancel: true,
+      confirmButtonText: "Yes, delete everywhere",
+      cancelButtonText: "Cancel",
+      reverseButtons: true,
+    });
+    if (!confirm.isConfirmed) return;
+
     setBusy(p.id);
+    swalDark.fire({
+      title: "Deleting…",
+      html: "Removing from SR Social Hub and connected networks.",
+      allowOutsideClick: false,
+      allowEscapeKey: false,
+      didOpen: () => {
+        Swal.showLoading();
+      },
+    });
+
     try {
       const res = await apiFetch<{
         ok: boolean;
         remoteResults?: Array<{ platform: string; ok: boolean; detail: string }>;
       }>(`/posts/${p.id}`, { method: "DELETE" });
-      const remoteNote = (res.remoteResults || [])
-        .map((r) => `${r.platform}: ${r.ok ? "ok" : r.detail}`)
-        .join(" · ");
-      toast.success("Post deleted", remoteNote || "Removed from workspace");
+      const results = res.remoteResults || [];
+      const resultsHtml =
+        results.length > 0
+          ? `<ul style="margin:8px 0 0;padding-left:18px;text-align:left;font-size:13px;line-height:1.7">${results
+              .map(
+                (r) =>
+                  `<li><strong>${r.platform}</strong>: ${
+                    r.ok ? "Deleted / cleared" : r.detail
+                  }</li>`,
+              )
+              .join("")}</ul>`
+          : `<p style="margin:8px 0 0;text-align:left;font-size:13px;opacity:.85">Removed from workspace.</p>`;
+
+      await swalDark.fire({
+        icon: "success",
+        title: "Post deleted",
+        html: `
+          <p style="margin:0;text-align:left;font-size:14px;line-height:1.5">
+            Cleared from SR Social Hub and attempted delete on all linked social media.
+          </p>
+          ${resultsHtml}
+        `,
+        confirmButtonText: "Done",
+        confirmButtonColor: "#14B8A6",
+      });
+
       if (previewPost?.id === p.id) setPreviewPost(null);
       await load();
     } catch (err) {
-      toast.error("Delete failed", err instanceof Error ? err.message : "Error");
+      const message = err instanceof Error ? err.message : "Error";
+      await swalDark.fire({
+        icon: "error",
+        title: "Delete failed",
+        text: message,
+        confirmButtonText: "Close",
+      });
+      toast.error("Delete failed", message);
     } finally {
       setBusy(null);
     }
