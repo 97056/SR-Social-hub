@@ -113,7 +113,12 @@ export class LinkedInPublisher implements PlatformPublisher {
     media: NonNullable<PublishPayload["media"]>,
   ): Promise<
     | { ok: true; imageUrn: string }
-    | { ok: false; status: "FAILED" | "REQUIRES_REAUTH" | "RETRY_PENDING"; error: string; retryable: boolean }
+    | {
+        ok: false;
+        status: "FAILED" | "REQUIRES_REAUTH" | "RETRY_PENDING" | "ASSISTED_REQUIRED";
+        error: string;
+        retryable: boolean;
+      }
   > {
     const abs = join(MEDIA_ROOT, media.storageKey);
     if (!existsSync(abs)) {
