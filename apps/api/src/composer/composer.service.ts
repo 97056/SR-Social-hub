@@ -313,6 +313,21 @@ export class ComposerService {
           message: `${target.platformCode} requires media`,
         });
       }
+      if (rule.videoRequired) {
+        if (!post.mediaAsset) {
+          errors.push({
+            code: "VIDEO_REQUIRED",
+            platform: target.platformCode,
+            message: `${target.platformCode} requires a video attachment — deselect YouTube for image-only posts`,
+          });
+        } else if (post.mediaAsset.kind !== "VIDEO") {
+          errors.push({
+            code: "VIDEO_REQUIRED",
+            platform: target.platformCode,
+            message: `${target.platformCode} needs a video file, not an image — deselect YouTube or attach a video`,
+          });
+        }
+      }
       if (!rule.supportsLink && (variant?.linkUrl || post.linkUrl)) {
         warnings.push({
           code: "LINK_UNSUPPORTED",

@@ -8,6 +8,8 @@ export type PlatformRule = {
   supportsHashtags: boolean;
   supportsLink: boolean;
   imageRequired?: boolean;
+  /** Platform only accepts video media (e.g. YouTube). */
+  videoRequired?: boolean;
   notes: string;
 };
 
@@ -48,7 +50,8 @@ export const PLATFORM_RULES: Record<SocialPlatformCode, PlatformRule> = {
     requiresTitle: true,
     supportsHashtags: true,
     supportsLink: true,
-    notes: "Title max 100 · description max 5,000. Video preferred.",
+    videoRequired: true,
+    notes: "Title max 100 · description max 5,000. Requires a video file (images cannot post to YouTube).",
   },
   // Kept for Prisma enum compatibility; product UI/API exclude TikTok.
   TIKTOK: {

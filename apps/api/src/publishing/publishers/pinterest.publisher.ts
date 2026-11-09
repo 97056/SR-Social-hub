@@ -101,7 +101,8 @@ export class PinterestPublisher implements PlatformPublisher {
       if (res.status === 401 || res.status === 403) {
         return {
           id: null,
-          reason: "Pinterest boards API unauthorized — reconnect the account, then publish again.",
+          reason:
+            "Pinterest boards API unauthorized — in Admin → Integrations confirm boards:read + pins:write, then Social Accounts → Disconnect/Reconnect Pinterest and Retry.",
         };
       }
       return {

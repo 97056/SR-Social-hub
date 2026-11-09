@@ -78,6 +78,15 @@ export class XPublisher implements PlatformPublisher {
   }
 
   private mapError(message: string, status?: number): PublishResult {
+    if (/credits?\s*depleted|usage.*cap|Monthly.*cap|Payment Required|402/i.test(message) || status === 402) {
+      return {
+        ok: false,
+        status: "FAILED",
+        retryable: false,
+        error:
+          "X API credits depleted — open developer.x.com → your app → Billing/Usage, add credits or upgrade the plan, then Retry.",
+      };
+    }
     if (status === 401 || status === 403 || /token|auth|unauthorized|forbidden/i.test(message)) {
       return { ok: false, status: "REQUIRES_REAUTH", error: message, retryable: false };
     }

@@ -121,6 +121,15 @@ export class ThreadsPublisher implements PlatformPublisher {
   }
 
   private mapError(message: string, code?: number): PublishResult {
+    if (/threads_basic|app review|Threads testers/i.test(message)) {
+      return {
+        ok: false,
+        status: "FAILED",
+        retryable: false,
+        error:
+          "Threads app needs Live mode + App Review for threads_basic, or add this account as a Threads tester in Meta Developer, then reconnect and Retry.",
+      };
+    }
     if (code === 190 || /session|oauth|token|login/i.test(message)) {
       return { ok: false, status: "REQUIRES_REAUTH", error: message, retryable: false };
     }
