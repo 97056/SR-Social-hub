@@ -405,8 +405,10 @@ export class PublishingService {
       }
 
       // Always try to keep the access token fresh; account stays Connected until Disconnect.
+      // Pinterest: force refresh — trial tokens often lack a reliable expiresAt and boards calls 401 on stale tokens.
       const refreshed = await this.social.ensureFreshAccessToken(socialAccount.id, {
         skewMs: 10 * 60_000,
+        force: socialAccount.platformCode === "PINTEREST",
       });
       if (refreshed?.token) {
         socialAccount = refreshed;

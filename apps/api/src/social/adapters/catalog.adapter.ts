@@ -429,15 +429,34 @@ export class CatalogSocialAdapter implements SocialAdapter {
           const username = user.username?.replace(/^@/, "") || null;
           const externalAccountId = user.id || username || undefined;
           if (externalAccountId) {
+            // Persist a default board so publish does not need boards:read mid-flight.
+            let boardId: string | null = null;
+            let boardsStatus: number | null = null;
+            try {
+              const boardsRes = await fetch("https://api.pinterest.com/v5/boards?page_size=5", {
+                headers: { Authorization: `Bearer ${accessToken}` },
+              });
+              boardsStatus = boardsRes.status;
+              if (boardsRes.ok) {
+                const boardsJson = (await boardsRes.json()) as {
+                  items?: Array<{ id?: string }>;
+                };
+                boardId = boardsJson.items?.find((b) => b.id)?.id ?? null;
+              }
+            } catch {
+              boardsStatus = null;
+            }
             return {
               externalAccountId,
               accountName: user.business_name || username || "Pinterest Account",
               username: username || externalAccountId,
-              pageIdentifier: user.id || username || null,
+              pageIdentifier: boardId || user.id || username || null,
               rawMeta: {
                 accountType: user.account_type ?? null,
                 profileImage: user.profile_image ?? null,
                 profileSource: "user_account",
+                boardId,
+                boardsStatus,
               },
             };
           }

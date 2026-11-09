@@ -28,9 +28,10 @@ export class PinterestPublisher implements PlatformPublisher {
     try {
       const board = await this.resolveBoardId(payload);
       if (!board.id) {
+        const unauthorized = Boolean(board.unauthorized);
         return {
           ok: false,
-          status: "FAILED",
+          status: unauthorized ? "REQUIRES_REAUTH" : "FAILED",
           retryable: false,
           error:
             board.reason ||
@@ -80,17 +81,23 @@ export class PinterestPublisher implements PlatformPublisher {
 
   private async resolveBoardId(
     payload: PublishPayload,
-  ): Promise<{ id: string | null; reason?: string }> {
+  ): Promise<{ id: string | null; reason?: string; unauthorized?: boolean }> {
     const metaBoard =
       typeof payload.rawMeta?.boardId === "string" ? payload.rawMeta.boardId.trim() : "";
     if (metaBoard) return { id: metaBoard };
 
-    // Only trust pageIdentifier as board id when connect used boards fallback.
+    // Connect may have stored a board id as pageIdentifier (boards_fallback).
     if (
       payload.rawMeta?.profileSource === "boards_fallback" &&
       payload.pageIdentifier?.trim()
     ) {
       return { id: payload.pageIdentifier.trim() };
+    }
+
+    // Numeric pageIdentifier is often a board id from older connects.
+    const pageId = payload.pageIdentifier?.trim() || "";
+    if (/^\d{6,}$/.test(pageId)) {
+      return { id: pageId };
     }
 
     const res = await fetch("https://api.pinterest.com/v5/boards?page_size=25", {
@@ -101,6 +108,7 @@ export class PinterestPublisher implements PlatformPublisher {
       if (res.status === 401 || res.status === 403) {
         return {
           id: null,
+          unauthorized: true,
           reason:
             "Pinterest boards API unauthorized — in Admin → Integrations confirm boards:read + pins:write, then Social Accounts → Disconnect/Reconnect Pinterest and Retry.",
         };
@@ -123,8 +131,14 @@ export class PinterestPublisher implements PlatformPublisher {
   }
 
   private mapError(message: string, status?: number): PublishResult {
-    if (status === 401 || status === 403 || /token|auth/i.test(message)) {
-      return { ok: false, status: "REQUIRES_REAUTH", error: message, retryable: false };
+    if (status === 401 || status === 403 || /token|auth|unauthorized|forbidden/i.test(message)) {
+      return {
+        ok: false,
+        status: "REQUIRES_REAUTH",
+        error:
+          "Pinterest auth rejected this action — Disconnect → Reconnect Pinterest (boards:read + pins:write), then Retry.",
+        retryable: false,
+      };
     }
     if (status === 429 || /rate/i.test(message)) {
       return { ok: false, status: "RETRY_PENDING", error: message, retryable: true };

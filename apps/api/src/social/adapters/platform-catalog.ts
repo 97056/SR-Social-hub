@@ -125,7 +125,7 @@ export const PLATFORM_CATALOG: PlatformCatalogEntry[] = [
       schedule: true,
       assistedOnly: false,
       notes:
-        "Video → Data API upload. Image or text → YouTube Community (Posts). Reconnect YouTube after scope updates.",
+        "Video → Data API upload. Image → short public video (Community/Posts has no OAuth API). Reconnect after scope updates.",
     },
     liveAuthorizeUrl: ({ clientId, redirectUri, scopes, state }) => {
       const q = new URLSearchParams({
@@ -161,7 +161,7 @@ export const PLATFORM_CATALOG: PlatformCatalogEntry[] = [
       schedule: false,
       assistedOnly: false,
       notes:
-        "Live pins require an image and a board. Pinterest app must include user_accounts:read.",
+        "Live pins need image + board. App scopes: user_accounts:read, boards:read, pins:write. Reconnect after scope changes.",
     },
     liveAuthorizeUrl: ({ clientId, redirectUri, scopes, state }) => {
       const q = new URLSearchParams({
