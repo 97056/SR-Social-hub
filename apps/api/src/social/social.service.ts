@@ -410,9 +410,10 @@ export class SocialService {
       },
       update: {
         accessTokenEncrypted: encryptSecret(exchanged.accessToken),
+        // Keep prior refresh token when provider omits a new one on reconnect.
         refreshTokenEncrypted: exchanged.refreshToken
           ? encryptSecret(exchanged.refreshToken)
-          : null,
+          : undefined,
         tokenType: exchanged.tokenType,
         scopes: exchanged.scopes,
         expiresAt: exchanged.expiresAt,
@@ -425,6 +426,31 @@ export class SocialService {
     await this.prisma.oAuthState.update({
       where: { id: oauthState.id },
       data: { consumedAt: new Date() },
+    });
+
+    // After reconnect, automatically retry publish jobs that failed for reauth.
+    await this.prisma.publishingJob.updateMany({
+      where: {
+        socialAccountId: account.id,
+        status: { in: ["REQUIRES_REAUTH", "FAILED"] },
+      },
+      data: {
+        status: "QUEUED",
+        nextAttemptAt: new Date(),
+        scheduledAt: new Date(),
+        lastError: null,
+        lockedAt: null,
+        lockedBy: null,
+        attemptCount: 0,
+      },
+    });
+    await this.prisma.postTarget.updateMany({
+      where: {
+        socialAccountId: account.id,
+        status: { in: ["FAILED", "SCHEDULED"] },
+        publishedAt: null,
+      },
+      data: { status: "SCHEDULED", lastError: null },
     });
 
     await this.prisma.auditLog.create({
@@ -449,6 +475,94 @@ export class SocialService {
     redirect.searchParams.set("connected", oauthState.platformCode);
     redirect.searchParams.set("mode", exchanged.mode);
     return { redirectTo: redirect.toString(), accountId: account.id, mode: exchanged.mode };
+  }
+
+  /**
+   * Refresh provider access token when near/past expiry. Returns updated account+token or null.
+   */
+  async ensureFreshAccessToken(socialAccountId: string) {
+    const account = await this.prisma.socialAccount.findUnique({
+      where: { id: socialAccountId },
+      include: {
+        token: true,
+        platform: { include: { appConfig: true } },
+      },
+    });
+    if (!account?.token || account.status !== "CONNECTED") return null;
+
+    const skewMs = 5 * 60_000;
+    const expiresAt = account.tokenExpiresAt ?? account.token.expiresAt;
+    if (expiresAt && expiresAt.getTime() > Date.now() + skewMs) {
+      return account;
+    }
+    // No expiry recorded — treat as still valid (e.g. non-expiring page tokens).
+    if (!expiresAt) return account;
+
+    const adapter = this.getAdapter(account.platformCode);
+    if (!adapter.refreshAccessToken) return null;
+
+    const clientId = account.platform.appConfig?.oauthClientId;
+    const secretEnc = account.platform.appConfig?.clientSecretEncrypted;
+    if (!clientId || !secretEnc) return null;
+
+    let refreshToken: string | null = null;
+    try {
+      refreshToken = account.token.refreshTokenEncrypted
+        ? decryptSecret(account.token.refreshTokenEncrypted)
+        : null;
+    } catch {
+      refreshToken = null;
+    }
+
+    let accessToken: string;
+    try {
+      accessToken = decryptSecret(account.token.accessTokenEncrypted);
+    } catch {
+      return null;
+    }
+
+    // Threads can refresh from the long-lived access token; others need refresh_token.
+    if (account.platformCode !== "THREADS" && !refreshToken) return null;
+
+    try {
+      const refreshed = await adapter.refreshAccessToken({
+        accessToken,
+        refreshToken,
+        clientId,
+        clientSecret: decryptSecret(secretEnc),
+      });
+
+      await this.prisma.socialAccountToken.update({
+        where: { socialAccountId: account.id },
+        data: {
+          accessTokenEncrypted: encryptSecret(refreshed.accessToken),
+          refreshTokenEncrypted: refreshed.refreshToken
+            ? encryptSecret(refreshed.refreshToken)
+            : undefined,
+          expiresAt: refreshed.expiresAt ?? null,
+        },
+      });
+      await this.prisma.socialAccount.update({
+        where: { id: account.id },
+        data: {
+          tokenExpiresAt: refreshed.expiresAt ?? null,
+          lastError: null,
+          status: "CONNECTED",
+        },
+      });
+
+      return this.prisma.socialAccount.findUnique({
+        where: { id: account.id },
+        include: { token: true, platform: { include: { appConfig: true } } },
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Token refresh failed";
+      await this.prisma.socialAccount.update({
+        where: { id: account.id },
+        data: { lastError: message.slice(0, 400) },
+      });
+      return null;
+    }
   }
 
   async buildOAuthErrorRedirect(state: string, message: string): Promise<string | null> {

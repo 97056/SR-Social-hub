@@ -26,15 +26,18 @@ export class PinterestPublisher implements PlatformPublisher {
     }
 
     try {
-      const boardId = await this.resolveBoardId(payload.accessToken);
-      if (!boardId) {
+      const board = await this.resolveBoardId(payload);
+      if (!board.id) {
         return {
           ok: false,
           status: "FAILED",
           retryable: false,
-          error: "No Pinterest board found. Create a board on Pinterest, then Publish again.",
+          error:
+            board.reason ||
+            "No Pinterest board found. Create a board on Pinterest, then Publish again.",
         };
       }
+      const boardId = board.id;
 
       const imageUrl = buildSignedMediaUrl(payload.media.assetId, 3600);
       const body = {
@@ -75,13 +78,47 @@ export class PinterestPublisher implements PlatformPublisher {
     }
   }
 
-  private async resolveBoardId(accessToken: string): Promise<string | null> {
-    const res = await fetch("https://api.pinterest.com/v5/boards?page_size=1", {
-      headers: { Authorization: `Bearer ${accessToken}` },
+  private async resolveBoardId(
+    payload: PublishPayload,
+  ): Promise<{ id: string | null; reason?: string }> {
+    const metaBoard =
+      typeof payload.rawMeta?.boardId === "string" ? payload.rawMeta.boardId.trim() : "";
+    if (metaBoard) return { id: metaBoard };
+
+    // Only trust pageIdentifier as board id when connect used boards fallback.
+    if (
+      payload.rawMeta?.profileSource === "boards_fallback" &&
+      payload.pageIdentifier?.trim()
+    ) {
+      return { id: payload.pageIdentifier.trim() };
+    }
+
+    const res = await fetch("https://api.pinterest.com/v5/boards?page_size=25", {
+      headers: { Authorization: `Bearer ${payload.accessToken}` },
     });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      if (res.status === 401 || res.status === 403) {
+        return {
+          id: null,
+          reason: "Pinterest boards API unauthorized — reconnect the account, then publish again.",
+        };
+      }
+      return {
+        id: null,
+        reason: `Pinterest boards API failed (${res.status})${body ? `: ${body.slice(0, 120)}` : ""}`,
+      };
+    }
     const json = (await res.json()) as { items?: Array<{ id?: string }> };
-    return json.items?.[0]?.id || null;
+    const first = json.items?.find((b) => b.id)?.id || null;
+    if (!first) {
+      return {
+        id: null,
+        reason:
+          "This Pinterest account has no boards. Create a board on Pinterest, then Publish again.",
+      };
+    }
+    return { id: first };
   }
 
   private mapError(message: string, status?: number): PublishResult {

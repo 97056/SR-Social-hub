@@ -13,6 +13,7 @@ import { EntitlementsService } from "../billing/entitlements.service";
 import { decryptSecret } from "../common/crypto.util";
 import { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
+import { SocialService } from "../social/social.service";
 import { createPublisherRegistry } from "./publishers/publisher.registry";
 
 @Injectable()
@@ -25,6 +26,7 @@ export class PublishingService {
     private readonly approvals: ApprovalsService,
     private readonly entitlements: EntitlementsService,
     private readonly notifications: NotificationsService,
+    private readonly social: SocialService,
   ) {}
 
   async enqueuePost(
@@ -402,12 +404,22 @@ export class PublishingService {
         return { jobId, status: "REQUIRES_REAUTH" };
       }
 
+      const skewMs = 5 * 60_000;
       if (
         socialAccount.tokenExpiresAt &&
-        socialAccount.tokenExpiresAt.getTime() < Date.now()
+        socialAccount.tokenExpiresAt.getTime() < Date.now() + skewMs
       ) {
-        await this.failJob(job.id, "REQUIRES_REAUTH", "Social token expired", false);
-        return { jobId, status: "REQUIRES_REAUTH" };
+        const refreshed = await this.social.ensureFreshAccessToken(socialAccount.id);
+        if (!refreshed?.token) {
+          await this.failJob(
+            job.id,
+            "REQUIRES_REAUTH",
+            "Social token expired — reconnect this account in Social Accounts, then Retry or Reschedule",
+            false,
+          );
+          return { jobId, status: "REQUIRES_REAUTH" };
+        }
+        socialAccount = refreshed;
       }
 
       const publisher = this.publishers.get(job.platformCode);
@@ -417,7 +429,22 @@ export class PublishingService {
       }
 
       const variant = job.post.variants.find((v) => v.platformCode === job.platformCode);
+      if (!socialAccount.token) {
+        await this.failJob(job.id, "REQUIRES_REAUTH", "Social account missing or disconnected", false);
+        return { jobId, status: "REQUIRES_REAUTH" };
+      }
       const accessToken = decryptSecret(socialAccount.token.accessTokenEncrypted);
+      let rawMeta: Record<string, unknown> | null = null;
+      if (socialAccount.token.rawMetaEncrypted) {
+        try {
+          rawMeta = JSON.parse(decryptSecret(socialAccount.token.rawMetaEncrypted)) as Record<
+            string,
+            unknown
+          >;
+        } catch {
+          rawMeta = null;
+        }
+      }
 
       await this.addEvent(job.id, "PUBLISH_ATTEMPT", `Attempt ${job.attemptCount}`);
 
@@ -425,6 +452,8 @@ export class PublishingService {
         platformCode: job.platformCode,
         accessToken,
         externalAccountId: socialAccount.externalAccountId,
+        pageIdentifier: socialAccount.pageIdentifier,
+        rawMeta,
         connectionMode: socialAccount.connectionMode,
         caption: variant?.caption || job.post.baseCaption,
         title: variant?.title,

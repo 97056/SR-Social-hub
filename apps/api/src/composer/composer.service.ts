@@ -512,16 +512,22 @@ export class ComposerService {
     await this.prisma.publishingJob.updateMany({
       where: {
         postId,
-        status: { in: ["QUEUED", "SCHEDULED", "RETRY_PENDING"] },
+        status: {
+          in: ["QUEUED", "SCHEDULED", "RETRY_PENDING", "FAILED", "REQUIRES_REAUTH"],
+        },
       },
       data: {
         scheduledAt,
         status: "SCHEDULED",
         nextAttemptAt: scheduledAt,
+        lastError: null,
+        lockedAt: null,
+        lockedBy: null,
+        attemptCount: 0,
       },
     });
 
-    // Ensure jobs exist for the new time.
+    // Ensure jobs exist for the new time (also recreates cancelled / assisted gaps).
     await this.publishing.enqueuePost(postId, user, { immediate: false });
 
     await this.prisma.auditLog.create({

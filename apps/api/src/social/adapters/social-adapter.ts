@@ -67,4 +67,18 @@ export interface SocialAdapter {
     pageIdentifier?: string | null;
     accessToken?: string;
   }>;
+  /**
+   * Refresh a near-expired / expired access token when the provider supports it.
+   * Threads refreshes via the current long-lived access token (no separate refresh_token).
+   */
+  refreshAccessToken?(input: {
+    accessToken: string;
+    refreshToken?: string | null;
+    clientId: string;
+    clientSecret: string;
+  }): Promise<{
+    accessToken: string;
+    refreshToken?: string | null;
+    expiresAt?: Date | null;
+  }>;
 }

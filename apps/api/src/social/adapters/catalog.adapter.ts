@@ -154,8 +154,40 @@ export class CatalogSocialAdapter implements SocialAdapter {
         ? json.scope.split(/[,\s]+/).filter(Boolean)
         : this.getDefaultScopes();
 
-    const profile = await this.fetchLiveProfile(json.access_token);
-    const accessToken = profile.accessToken || json.access_token;
+    let accessToken = json.access_token;
+    let refreshToken = json.refresh_token ?? null;
+    let expiresIn = json.expires_in;
+
+    // Threads short-lived tokens die in ~1h; upgrade to long-lived (~60d) at connect.
+    if (this.entry.code === "THREADS") {
+      const upgraded = await this.upgradeThreadsToken(accessToken, input.clientSecret);
+      if (upgraded) {
+        accessToken = upgraded.accessToken;
+        expiresIn = upgraded.expiresIn;
+        // Threads refreshes via the long-lived access token itself.
+        refreshToken = upgraded.accessToken;
+      }
+    }
+
+    // Instagram: upgrade Meta user token before resolving the Page/IG business account.
+    if (this.entry.code === "INSTAGRAM") {
+      const upgraded = await this.upgradeMetaUserToken(
+        accessToken,
+        input.clientId,
+        input.clientSecret,
+        input.apiVersion || "v21.0",
+      );
+      if (upgraded) {
+        accessToken = upgraded.accessToken;
+        expiresIn = upgraded.expiresIn;
+      }
+    }
+
+    const profile = await this.fetchLiveProfile(accessToken);
+    const usedPageToken = Boolean(
+      profile.accessToken && profile.accessToken !== accessToken,
+    );
+    accessToken = profile.accessToken || accessToken;
     const suffix = createHash("sha256").update(accessToken).digest("hex").slice(0, 8);
     const requiresRealProfile =
       this.entry.code === "THREADS" ||
@@ -178,9 +210,15 @@ export class CatalogSocialAdapter implements SocialAdapter {
     }
     return {
       accessToken,
-      refreshToken: json.refresh_token ?? null,
+      refreshToken,
       tokenType: json.token_type ?? "bearer",
-      expiresAt: json.expires_in ? new Date(Date.now() + json.expires_in * 1000) : null,
+      // IG/FB page tokens from a long-lived user token typically do not expire.
+      expiresAt:
+        usedPageToken
+          ? null
+          : expiresIn
+            ? new Date(Date.now() + expiresIn * 1000)
+            : null,
       scopes,
       externalAccountId: profile.externalAccountId || `${this.entry.mockPrefix}_live_${suffix}`,
       accountName: profile.accountName || `${this.displayName} Connected Account`,
@@ -190,6 +228,145 @@ export class CatalogSocialAdapter implements SocialAdapter {
       mode: "live",
       rawMeta: { provider: this.entry.code, live: true, ...(profile.rawMeta ?? {}) },
     };
+  }
+
+  async refreshAccessToken(input: {
+    accessToken: string;
+    refreshToken?: string | null;
+    clientId: string;
+    clientSecret: string;
+  }): Promise<{
+    accessToken: string;
+    refreshToken?: string | null;
+    expiresAt?: Date | null;
+  }> {
+    if (input.accessToken.startsWith("mock_")) {
+      return {
+        accessToken: input.accessToken,
+        refreshToken: input.refreshToken ?? null,
+        expiresAt: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000),
+      };
+    }
+
+    if (this.entry.code === "THREADS") {
+      const token = input.refreshToken || input.accessToken;
+      const url = new URL("https://graph.threads.net/refresh_access_token");
+      url.searchParams.set("grant_type", "th_refresh_token");
+      url.searchParams.set("access_token", token);
+      const res = await fetch(url);
+      const rawText = await res.text();
+      if (!res.ok) {
+        throw new Error(
+          `Threads token refresh failed (${res.status}): ${this.safeOAuthError(rawText)}`,
+        );
+      }
+      const json = JSON.parse(rawText) as { access_token?: string; expires_in?: number };
+      if (!json.access_token) throw new Error("Threads token refresh returned no access_token");
+      return {
+        accessToken: json.access_token,
+        refreshToken: json.access_token,
+        expiresAt: json.expires_in
+          ? new Date(Date.now() + json.expires_in * 1000)
+          : new Date(Date.now() + 60 * 24 * 60 * 60 * 1000),
+      };
+    }
+
+    if (!this.entry.liveTokenUrl) {
+      throw new Error(`${this.displayName} does not support token refresh`);
+    }
+    if (!input.refreshToken) {
+      throw new Error(`${this.displayName} has no refresh token — reconnect the account`);
+    }
+
+    const usesBasicAuth = this.entry.code === "X" || this.entry.code === "PINTEREST";
+    const body = new URLSearchParams({
+      grant_type: "refresh_token",
+      refresh_token: input.refreshToken,
+    });
+    if (!usesBasicAuth) {
+      body.set("client_id", input.clientId);
+      body.set("client_secret", input.clientSecret);
+    }
+    const headers: Record<string, string> = {
+      "Content-Type": "application/x-www-form-urlencoded",
+    };
+    if (usesBasicAuth) {
+      headers.Authorization = `Basic ${Buffer.from(
+        `${input.clientId}:${input.clientSecret}`,
+      ).toString("base64")}`;
+    }
+
+    const res = await fetch(this.entry.liveTokenUrl, {
+      method: "POST",
+      headers,
+      body,
+    });
+    const rawText = await res.text();
+    if (!res.ok) {
+      throw new Error(
+        `${this.displayName} token refresh failed (${res.status}): ${this.safeOAuthError(rawText)}`,
+      );
+    }
+    const json = JSON.parse(rawText) as {
+      access_token?: string;
+      refresh_token?: string;
+      expires_in?: number;
+    };
+    if (!json.access_token) {
+      throw new Error(`${this.displayName} token refresh returned no access_token`);
+    }
+    return {
+      accessToken: json.access_token,
+      refreshToken: json.refresh_token ?? input.refreshToken,
+      expiresAt: json.expires_in ? new Date(Date.now() + json.expires_in * 1000) : null,
+    };
+  }
+
+  private async upgradeThreadsToken(
+    shortLivedToken: string,
+    clientSecret: string,
+  ): Promise<{ accessToken: string; expiresIn: number } | null> {
+    try {
+      const url = new URL("https://graph.threads.net/access_token");
+      url.searchParams.set("grant_type", "th_exchange_token");
+      url.searchParams.set("client_secret", clientSecret);
+      url.searchParams.set("access_token", shortLivedToken);
+      const res = await fetch(url);
+      if (!res.ok) return null;
+      const json = (await res.json()) as { access_token?: string; expires_in?: number };
+      if (!json.access_token) return null;
+      return {
+        accessToken: json.access_token,
+        expiresIn: json.expires_in || 60 * 24 * 60 * 60,
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  private async upgradeMetaUserToken(
+    shortLivedToken: string,
+    clientId: string,
+    clientSecret: string,
+    version: string,
+  ): Promise<{ accessToken: string; expiresIn: number } | null> {
+    try {
+      const url = new URL(`https://graph.facebook.com/${version}/oauth/access_token`);
+      url.searchParams.set("grant_type", "fb_exchange_token");
+      url.searchParams.set("client_id", clientId);
+      url.searchParams.set("client_secret", clientSecret);
+      url.searchParams.set("fb_exchange_token", shortLivedToken);
+      const res = await fetch(url);
+      if (!res.ok) return null;
+      const json = (await res.json()) as { access_token?: string; expires_in?: number };
+      if (!json.access_token) return null;
+      return {
+        accessToken: json.access_token,
+        expiresIn: json.expires_in || 60 * 24 * 60 * 60,
+      };
+    } catch {
+      return null;
+    }
   }
 
   /** Strip secrets/tokens from provider error payloads before surfacing. */

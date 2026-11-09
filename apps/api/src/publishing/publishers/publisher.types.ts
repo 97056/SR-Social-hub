@@ -4,6 +4,10 @@ export type PublishPayload = {
   platformCode: SocialPlatformCode;
   accessToken: string;
   externalAccountId: string;
+  /** Provider page / board / channel id when distinct from externalAccountId. */
+  pageIdentifier?: string | null;
+  /** Decrypted connect-time metadata (e.g. Pinterest boardId). */
+  rawMeta?: Record<string, unknown> | null;
   connectionMode: string;
   caption: string;
   title?: string | null;

@@ -61,7 +61,7 @@ export class LinkedInPublisher implements PlatformPublisher {
         headers: {
           Authorization: `Bearer ${payload.accessToken}`,
           "Content-Type": "application/json",
-          "LinkedIn-Version": "202405",
+          "LinkedIn-Version": process.env.LINKEDIN_API_VERSION || "202610",
           "X-Restli-Protocol-Version": "2.0.0",
         },
         body: JSON.stringify(body),

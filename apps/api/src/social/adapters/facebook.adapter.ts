@@ -106,9 +106,30 @@ export class FacebookAdapter implements SocialAdapter {
       expires_in?: number;
     };
 
+    // Upgrade short-lived user token → long-lived (~60d) before resolving pages.
+    let userToken = tokenJson.access_token;
+    let expiresIn = tokenJson.expires_in;
+    try {
+      const llUrl = new URL(`https://graph.facebook.com/${version}/oauth/access_token`);
+      llUrl.searchParams.set("grant_type", "fb_exchange_token");
+      llUrl.searchParams.set("client_id", input.clientId);
+      llUrl.searchParams.set("client_secret", input.clientSecret);
+      llUrl.searchParams.set("fb_exchange_token", userToken);
+      const llRes = await fetch(llUrl);
+      if (llRes.ok) {
+        const llJson = (await llRes.json()) as { access_token?: string; expires_in?: number };
+        if (llJson.access_token) {
+          userToken = llJson.access_token;
+          expiresIn = llJson.expires_in ?? 60 * 24 * 60 * 60;
+        }
+      }
+    } catch {
+      /* keep short-lived */
+    }
+
     const meUrl = new URL(`https://graph.facebook.com/${version}/me`);
     meUrl.searchParams.set("fields", "id,name");
-    meUrl.searchParams.set("access_token", tokenJson.access_token);
+    meUrl.searchParams.set("access_token", userToken);
     const meRes = await fetch(meUrl);
     if (!meRes.ok) {
       throw new Error(`Facebook profile fetch failed: ${await meRes.text()}`);
@@ -118,9 +139,12 @@ export class FacebookAdapter implements SocialAdapter {
     let pageId = me.id;
     let pageName = me.name ?? "Facebook User";
     let username: string | null = null;
+    let accessToken = userToken;
+    // Page tokens from a long-lived user token typically do not expire.
+    let pageTokenExpires: number | null = null;
 
     const pagesUrl = new URL(`https://graph.facebook.com/${version}/me/accounts`);
-    pagesUrl.searchParams.set("access_token", tokenJson.access_token);
+    pagesUrl.searchParams.set("access_token", userToken);
     const pagesRes = await fetch(pagesUrl);
     if (pagesRes.ok) {
       const pagesJson = (await pagesRes.json()) as {
@@ -131,18 +155,22 @@ export class FacebookAdapter implements SocialAdapter {
         pageName = pagesJson.data[0].name;
         username = pagesJson.data[0].name;
         if (pagesJson.data[0].access_token) {
-          tokenJson.access_token = pagesJson.data[0].access_token;
+          accessToken = pagesJson.data[0].access_token;
+          pageTokenExpires = null;
         }
       }
     }
 
     return {
-      accessToken: tokenJson.access_token,
+      accessToken,
       refreshToken: null,
       tokenType: tokenJson.token_type ?? "bearer",
-      expiresAt: tokenJson.expires_in
-        ? new Date(Date.now() + tokenJson.expires_in * 1000)
-        : null,
+      expiresAt:
+        pageTokenExpires === null && accessToken !== userToken
+          ? null
+          : expiresIn
+            ? new Date(Date.now() + expiresIn * 1000)
+            : null,
       scopes: this.getDefaultScopes(),
       externalAccountId: pageId,
       accountName: pageName,
