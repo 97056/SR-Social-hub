@@ -80,7 +80,8 @@ export class SocialService {
           username: a.username,
           externalAccountId: a.externalAccountId,
           pageIdentifier: a.pageIdentifier,
-          status: a.status,
+          // Only Disconnect flips status — soft provider issues stay Connected.
+          status: a.status === "DISCONNECTED" ? "DISCONNECTED" : "CONNECTED",
           capabilities: a.capabilities,
           lastSyncedAt: a.lastSyncedAt,
           tokenExpiresAt: a.tokenExpiresAt,
@@ -158,7 +159,7 @@ export class SocialService {
         accountName: a.accountName,
         username: a.username,
         externalAccountId: a.externalAccountId,
-        status: a.status,
+        status: a.status === "DISCONNECTED" ? "DISCONNECTED" : "CONNECTED",
         connectionMode: a.connectionMode,
         tokenExpiresAt: a.tokenExpiresAt,
         lastSyncedAt: a.lastSyncedAt,
@@ -478,9 +479,33 @@ export class SocialService {
   }
 
   /**
-   * Refresh provider access token when near/past expiry. Returns updated account+token or null.
+   * Accounts stay CONNECTED until the user clicks Disconnect.
+   * Soft statuses (EXPIRED / REQUIRES_REAUTH / ERROR) are healed back to CONNECTED;
+   * only DISCONNECTED is terminal.
    */
-  async ensureFreshAccessToken(socialAccountId: string) {
+  async ensureConnectedStatus(socialAccountId: string) {
+    const account = await this.prisma.socialAccount.findUnique({
+      where: { id: socialAccountId },
+      select: { id: true, status: true },
+    });
+    if (!account || account.status === "DISCONNECTED" || account.status === "CONNECTED") {
+      return account;
+    }
+    return this.prisma.socialAccount.update({
+      where: { id: socialAccountId },
+      data: { status: "CONNECTED" },
+      select: { id: true, status: true },
+    });
+  }
+
+  /**
+   * Refresh provider access token when near/past expiry.
+   * Never disconnects the account — only Disconnect does that.
+   */
+  async ensureFreshAccessToken(
+    socialAccountId: string,
+    opts?: { skewMs?: number; force?: boolean },
+  ) {
     const account = await this.prisma.socialAccount.findUnique({
       where: { id: socialAccountId },
       include: {
@@ -488,22 +513,34 @@ export class SocialService {
         platform: { include: { appConfig: true } },
       },
     });
-    if (!account?.token || account.status !== "CONNECTED") return null;
+    if (!account?.token || account.status === "DISCONNECTED") return null;
 
-    const skewMs = 5 * 60_000;
+    // Keep UI / publish path treating the link as connected.
+    if (account.status !== "CONNECTED") {
+      await this.prisma.socialAccount.update({
+        where: { id: account.id },
+        data: { status: "CONNECTED" },
+      });
+      account.status = "CONNECTED";
+    }
+
+    const skewMs = opts?.skewMs ?? 5 * 60_000;
     const expiresAt = account.tokenExpiresAt ?? account.token.expiresAt;
-    if (expiresAt && expiresAt.getTime() > Date.now() + skewMs) {
+    if (!opts?.force && expiresAt && expiresAt.getTime() > Date.now() + skewMs) {
       return account;
     }
     // No expiry recorded — treat as still valid (e.g. non-expiring page tokens).
-    if (!expiresAt) return account;
+    if (!opts?.force && !expiresAt) return account;
 
     const adapter = this.getAdapter(account.platformCode);
-    if (!adapter.refreshAccessToken) return null;
+    if (!adapter.refreshAccessToken) {
+      // Cannot refresh this network — stay CONNECTED; publish may still use current token.
+      return account;
+    }
 
     const clientId = account.platform.appConfig?.oauthClientId;
     const secretEnc = account.platform.appConfig?.clientSecretEncrypted;
-    if (!clientId || !secretEnc) return null;
+    if (!clientId || !secretEnc) return account;
 
     let refreshToken: string | null = null;
     try {
@@ -522,7 +559,9 @@ export class SocialService {
     }
 
     // Threads can refresh from the long-lived access token; others need refresh_token.
-    if (account.platformCode !== "THREADS" && !refreshToken) return null;
+    if (account.platformCode !== "THREADS" && !refreshToken) {
+      return account;
+    }
 
     try {
       const refreshed = await adapter.refreshAccessToken({
@@ -548,6 +587,7 @@ export class SocialService {
           tokenExpiresAt: refreshed.expiresAt ?? null,
           lastError: null,
           status: "CONNECTED",
+          lastSyncedAt: new Date(),
         },
       });
 
@@ -557,12 +597,58 @@ export class SocialService {
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : "Token refresh failed";
+      // Stay CONNECTED — never auto-disconnect. Surface soft error for support only.
       await this.prisma.socialAccount.update({
         where: { id: account.id },
-        data: { lastError: message.slice(0, 400) },
+        data: {
+          status: "CONNECTED",
+          lastError: `Token refresh pending: ${message}`.slice(0, 400),
+        },
       });
       return null;
     }
+  }
+
+  /**
+   * Background keep-alive: refresh tokens that expire soon so connections survive for months.
+   */
+  async refreshExpiringAccounts(limit = 40) {
+    const lookAheadMs = Number(process.env.SOCIAL_TOKEN_KEEPALIVE_LOOKAHEAD_MS ?? 12 * 60 * 60 * 1000);
+    const cutoff = new Date(Date.now() + lookAheadMs);
+
+    // Heal soft statuses first — only Disconnect should leave CONNECTED.
+    await this.prisma.socialAccount.updateMany({
+      where: {
+        status: { in: ["EXPIRED", "REQUIRES_REAUTH", "ERROR"] },
+      },
+      data: { status: "CONNECTED" },
+    });
+
+    const due = await this.prisma.socialAccount.findMany({
+      where: {
+        status: "CONNECTED",
+        connectionMode: "live",
+        token: { isNot: null },
+        OR: [
+          { tokenExpiresAt: { lte: cutoff } },
+          { tokenExpiresAt: null, token: { expiresAt: { lte: cutoff } } },
+        ],
+      },
+      select: { id: true, platformCode: true },
+      take: limit,
+      orderBy: { tokenExpiresAt: "asc" },
+    });
+
+    let refreshed = 0;
+    let failed = 0;
+    for (const row of due) {
+      const result = await this.ensureFreshAccessToken(row.id, {
+        skewMs: lookAheadMs,
+      });
+      if (result) refreshed += 1;
+      else failed += 1;
+    }
+    return { scanned: due.length, refreshed, failed };
   }
 
   async buildOAuthErrorRedirect(state: string, message: string): Promise<string | null> {

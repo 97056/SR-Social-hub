@@ -399,27 +399,28 @@ export class PublishingService {
         }
       }
 
-      if (!socialAccount || socialAccount.status !== "CONNECTED" || !socialAccount.token) {
+      if (!socialAccount || socialAccount.status === "DISCONNECTED" || !socialAccount.token) {
         await this.failJob(job.id, "REQUIRES_REAUTH", "Social account missing or disconnected", false);
         return { jobId, status: "REQUIRES_REAUTH" };
       }
 
-      const skewMs = 5 * 60_000;
-      if (
-        socialAccount.tokenExpiresAt &&
-        socialAccount.tokenExpiresAt.getTime() < Date.now() + skewMs
-      ) {
-        const refreshed = await this.social.ensureFreshAccessToken(socialAccount.id);
-        if (!refreshed?.token) {
-          await this.failJob(
-            job.id,
-            "REQUIRES_REAUTH",
-            "Social token expired — reconnect this account in Social Accounts, then Retry or Reschedule",
-            false,
-          );
-          return { jobId, status: "REQUIRES_REAUTH" };
-        }
+      // Always try to keep the access token fresh; account stays Connected until Disconnect.
+      const refreshed = await this.social.ensureFreshAccessToken(socialAccount.id, {
+        skewMs: 10 * 60_000,
+      });
+      if (refreshed?.token) {
         socialAccount = refreshed;
+      } else if (
+        socialAccount.tokenExpiresAt &&
+        socialAccount.tokenExpiresAt.getTime() < Date.now()
+      ) {
+        await this.failJob(
+          job.id,
+          "REQUIRES_REAUTH",
+          "Social token could not be refreshed automatically — open Social Accounts → Reconnect, then Retry. The account stays Connected until you Disconnect.",
+          false,
+        );
+        return { jobId, status: "REQUIRES_REAUTH" };
       }
 
       const publisher = this.publishers.get(job.platformCode);

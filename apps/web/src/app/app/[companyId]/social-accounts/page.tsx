@@ -207,7 +207,8 @@ export default function CompanySocialAccountsPage() {
         <p className="text-sm text-[var(--muted)] sm:max-w-md sm:text-right">
           Showing all networks for <span className="font-semibold text-[var(--text)]">{selectedClientName}</span>.
           Your plan allows <strong className="text-[var(--text)]">{data?.plan.maxSocialNetworks ?? "—"}</strong>{" "}
-          networks ({networksLeft} slots left).
+          networks ({networksLeft} slots left). Connected accounts stay linked until you click{" "}
+          <strong className="text-[var(--text)]">Disconnect</strong> — tokens refresh automatically.
         </p>
       </div>
 
