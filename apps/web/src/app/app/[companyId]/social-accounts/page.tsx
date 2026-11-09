@@ -74,6 +74,18 @@ export default function CompanySocialAccountsPage() {
       return;
     }
     load().catch((e: Error) => setError(e.message));
+
+    const params = new URLSearchParams(window.location.search);
+    const oauthError = params.get("oauth_error");
+    const connected = params.get("connected");
+    if (oauthError) {
+      toast.error("Connect failed", decodeURIComponent(oauthError.replace(/\+/g, " ")));
+      setError(decodeURIComponent(oauthError.replace(/\+/g, " ")));
+      router.replace(`/app/${companyId}/social-accounts`);
+    } else if (connected) {
+      toast.success(`${connected} connected`, "Account linked and will stay connected until you Disconnect.");
+      router.replace(`/app/${companyId}/social-accounts`);
+    }
   }, [companyId, router]);
 
   const clientAccounts = useMemo(

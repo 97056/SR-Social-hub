@@ -253,10 +253,12 @@ export class SocialService {
       throw new BadRequestException(`${platform.name} adapter is not available yet`);
     }
 
-    const redirectUri = META_LOGIN_PLATFORMS.has(input.platformCode)
-      ? resolveMetaRedirectUri(platform.appConfig?.redirectUri)
-      : platform.appConfig?.redirectUri ||
-        `${process.env.API_URL ?? "http://localhost:4000"}/api/v1/oauth/callback`;
+    // Threads shares the Meta OAuth callback URI; Facebook/Instagram use Login for Business.
+    const redirectUri =
+      input.platformCode === "THREADS" || META_LOGIN_PLATFORMS.has(input.platformCode)
+        ? resolveMetaRedirectUri(platform.appConfig?.redirectUri)
+        : platform.appConfig?.redirectUri ||
+          `${process.env.API_URL ?? "http://localhost:4000"}/api/v1/oauth/callback`;
     // Union admin-configured scopes with adapter defaults so new required scopes
     // (e.g. Pinterest user_accounts:read) apply without a manual Integrations edit.
     const scopes = [
@@ -337,10 +339,12 @@ export class SocialService {
       platform.appConfig?.oauthClientId && platform.appConfig?.clientSecretEncrypted,
     );
     const mode = adapter.resolveMode(hasCredentials);
-    const redirectUri = META_LOGIN_PLATFORMS.has(oauthState.platformCode)
-      ? resolveMetaRedirectUri(platform.appConfig?.redirectUri)
-      : platform.appConfig?.redirectUri ||
-        `${process.env.API_URL ?? "http://localhost:4000"}/api/v1/oauth/callback`;
+    const redirectUri =
+      oauthState.platformCode === "THREADS" ||
+      META_LOGIN_PLATFORMS.has(oauthState.platformCode)
+        ? resolveMetaRedirectUri(platform.appConfig?.redirectUri)
+        : platform.appConfig?.redirectUri ||
+          `${process.env.API_URL ?? "http://localhost:4000"}/api/v1/oauth/callback`;
 
     const secret = platform.appConfig?.clientSecretEncrypted
       ? decryptSecret(platform.appConfig.clientSecretEncrypted)

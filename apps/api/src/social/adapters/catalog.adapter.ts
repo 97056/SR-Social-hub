@@ -137,6 +137,7 @@ export class CatalogSocialAdapter implements SocialAdapter {
       refresh_token?: string;
       token_type?: string;
       expires_in?: number;
+      user_id?: string | number;
       scope?: string | string[];
     };
     try {
@@ -157,17 +158,10 @@ export class CatalogSocialAdapter implements SocialAdapter {
     let accessToken = json.access_token;
     let refreshToken = json.refresh_token ?? null;
     let expiresIn = json.expires_in;
-
-    // Threads short-lived tokens die in ~1h; upgrade to long-lived (~60d) at connect.
-    if (this.entry.code === "THREADS") {
-      const upgraded = await this.upgradeThreadsToken(accessToken, input.clientSecret);
-      if (upgraded) {
-        accessToken = upgraded.accessToken;
-        expiresIn = upgraded.expiresIn;
-        // Threads refreshes via the long-lived access token itself.
-        refreshToken = upgraded.accessToken;
-      }
-    }
+    const tokenUserId =
+      json.user_id != null && String(json.user_id).trim()
+        ? String(json.user_id).trim()
+        : null;
 
     // Instagram: upgrade Meta user token before resolving the Page/IG business account.
     if (this.entry.code === "INSTAGRAM") {
@@ -183,7 +177,24 @@ export class CatalogSocialAdapter implements SocialAdapter {
       }
     }
 
-    const profile = await this.fetchLiveProfile(accessToken);
+    // Resolve profile with the short-lived token first (Threads upgrade can fail with the wrong secret).
+    let profile = await this.fetchLiveProfile(accessToken, { tokenUserId });
+
+    // Threads: upgrade to long-lived (~60d) after profile succeeds, then keep refreshable token.
+    if (this.entry.code === "THREADS") {
+      const upgraded = await this.upgradeThreadsToken(accessToken, input.clientSecret);
+      if (upgraded) {
+        accessToken = upgraded.accessToken;
+        expiresIn = upgraded.expiresIn;
+        refreshToken = upgraded.accessToken;
+        // Re-check profile with long-lived token when short-lived lookup was thin.
+        if (!profile.externalAccountId || profile.rawMeta?.profileSource === "token_user_id") {
+          const again = await this.fetchLiveProfile(accessToken, { tokenUserId });
+          if (again.externalAccountId) profile = again;
+        }
+      }
+    }
+
     const usedPageToken = Boolean(
       profile.accessToken && profile.accessToken !== accessToken,
     );
@@ -203,7 +214,9 @@ export class CatalogSocialAdapter implements SocialAdapter {
           ? ` ${profile.rawMeta.hint}`
           : this.entry.code === "PINTEREST"
             ? " Add the user_accounts:read scope in your Pinterest developer app, save, then reconnect."
-            : " Check app permissions / Live mode, then reconnect.";
+            : this.entry.code === "THREADS"
+              ? " Use the Threads App ID/Secret (not Facebook), enable threads_basic, set the app Live, then reconnect."
+              : " Check app permissions / Live mode, then reconnect.";
       throw new Error(
         `${this.displayName} connected but profile lookup failed.${hint}`,
       );
@@ -388,7 +401,10 @@ export class CatalogSocialAdapter implements SocialAdapter {
     }
   }
 
-  private async fetchLiveProfile(accessToken: string): Promise<{
+  private async fetchLiveProfile(
+    accessToken: string,
+    opts?: { tokenUserId?: string | null },
+  ): Promise<{
     externalAccountId?: string;
     accountName?: string | null;
     username?: string | null;
@@ -493,33 +509,117 @@ export class CatalogSocialAdapter implements SocialAdapter {
       }
 
       if (this.entry.code === "THREADS") {
-        // Prefer Threads Graph; fall back to Facebook Graph debug if token is Meta-shared.
-        const attempts = [
-          "https://graph.threads.net/v1.0/me",
-          "https://graph.threads.net/me",
+        const fieldSets = [
+          "id,username,name,threads_profile_picture_url",
+          "id,username,name",
+          "id,username",
+          "id",
         ];
-        for (const base of attempts) {
-          const meUrl = new URL(base);
-          meUrl.searchParams.set("fields", "id,username,name,threads_profile_picture_url");
-          meUrl.searchParams.set("access_token", accessToken);
-          const meRes = await fetch(meUrl);
-          if (!meRes.ok) continue;
-          const me = (await meRes.json()) as {
-            id?: string;
-            username?: string;
-            name?: string;
-            error?: { message?: string };
-          };
-          if (me.error || !me.id) continue;
+        const hosts = [
+          "https://graph.threads.net/v1.0",
+          "https://graph.threads.com/v1.0",
+          "https://graph.threads.net",
+          "https://graph.threads.com",
+        ];
+        const errors: string[] = [];
+
+        for (const host of hosts) {
+          for (const fields of fieldSets) {
+            const meUrl = new URL(`${host}/me`);
+            meUrl.searchParams.set("fields", fields);
+            meUrl.searchParams.set("access_token", accessToken);
+            try {
+              const meRes = await fetch(meUrl);
+              const raw = await meRes.text();
+              let me: {
+                id?: string;
+                username?: string;
+                name?: string;
+                error?: { message?: string; code?: number; error_subcode?: number };
+              } = {};
+              try {
+                me = JSON.parse(raw) as typeof me;
+              } catch {
+                errors.push(`${host}/me fields=${fields} non-JSON (${meRes.status})`);
+                continue;
+              }
+              if (!meRes.ok || me.error || !me.id) {
+                const msg =
+                  me.error?.message ||
+                  raw.replace(/[A-Za-z0-9_-]{20,}/g, "[redacted]").slice(0, 120) ||
+                  `HTTP ${meRes.status}`;
+                errors.push(`${host}/me: ${msg}`);
+                continue;
+              }
+              return {
+                externalAccountId: me.id,
+                accountName: me.name || (me.username ? `@${me.username}` : "Threads Profile"),
+                username: me.username || me.id,
+                pageIdentifier: me.id,
+                rawMeta: {
+                  threadsUserId: me.id,
+                  profileSource: `${host}/me`,
+                  fields,
+                },
+              };
+            } catch (e) {
+              errors.push(
+                `${host}/me failed: ${e instanceof Error ? e.message : "network error"}`,
+              );
+            }
+          }
+        }
+
+        // Token exchange often returns user_id — enough to finish connect even if /me is flaky.
+        if (opts?.tokenUserId) {
+          for (const host of hosts.slice(0, 2)) {
+            const byId = new URL(`${host}/${opts.tokenUserId}`);
+            byId.searchParams.set("fields", "id,username,name");
+            byId.searchParams.set("access_token", accessToken);
+            try {
+              const res = await fetch(byId);
+              if (!res.ok) continue;
+              const me = (await res.json()) as {
+                id?: string;
+                username?: string;
+                name?: string;
+              };
+              if (!me.id) continue;
+              return {
+                externalAccountId: me.id,
+                accountName: me.name || (me.username ? `@${me.username}` : "Threads Profile"),
+                username: me.username || me.id,
+                pageIdentifier: me.id,
+                rawMeta: {
+                  threadsUserId: me.id,
+                  profileSource: `${host}/{user-id}`,
+                },
+              };
+            } catch {
+              /* try next */
+            }
+          }
           return {
-            externalAccountId: me.id,
-            accountName: me.name || (me.username ? `@${me.username}` : "Threads Profile"),
-            username: me.username || me.id,
-            pageIdentifier: me.id,
-            rawMeta: { threadsUserId: me.id, profileSource: base },
+            externalAccountId: opts.tokenUserId,
+            accountName: "Threads Profile",
+            username: opts.tokenUserId,
+            pageIdentifier: opts.tokenUserId,
+            rawMeta: {
+              threadsUserId: opts.tokenUserId,
+              profileSource: "token_user_id",
+              hint: errors[0] ? `Profile /me failed (${errors[0]}). Saved user id from OAuth.` : undefined,
+            },
           };
         }
-        return {};
+
+        return {
+          rawMeta: {
+            profileSource: "failed",
+            hint:
+              errors[0] ||
+              "Use Threads App ID/Secret in Admin → Integrations, enable threads_basic + Live mode, then reconnect.",
+          },
+        };
       }
 
       if (this.entry.code === "LINKEDIN") {

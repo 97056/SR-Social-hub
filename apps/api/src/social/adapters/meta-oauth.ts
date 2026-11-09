@@ -1,5 +1,9 @@
-/** Platforms that share Meta Facebook Login / Login for Business. */
-export const META_LOGIN_PLATFORMS = new Set(["FACEBOOK", "INSTAGRAM", "THREADS"]);
+/**
+ * Platforms that share Meta Facebook Login / Login for Business.
+ * Threads uses its own threads.net OAuth + Threads App ID/Secret — keep it out of this set
+ * so it does not inherit Facebook Login config_id / dialog settings.
+ */
+export const META_LOGIN_PLATFORMS = new Set(["FACEBOOK", "INSTAGRAM"]);
 
 export function resolveMetaRedirectUri(platformRedirectUri?: string | null): string {
   return (
